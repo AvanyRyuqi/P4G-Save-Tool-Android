@@ -237,6 +237,65 @@
     return ((q % M) + M) % M;
   }
 
+
+  // ------------------------------------------------- Switch .binslot support
+  // The Switch version keeps a "<name>.binslot" next to "<name>.bin". Offset 24
+  // of it holds the MD5 of the .bin; if it does not match, the game rejects the save.
+  function md5(bytes) {
+    const K = new Uint32Array(64), R = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
+    for (let i = 0; i < 64; i++) K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296) >>> 0;
+    const n = bytes.length, padded = new Uint8Array(((n + 8) >> 6 << 6) + 64);
+    padded.set(bytes); padded[n] = 0x80;
+    const dv = new DataView(padded.buffer);
+    dv.setUint32(padded.length - 8, (n * 8) >>> 0, true);
+    dv.setUint32(padded.length - 4, Math.floor(n / 536870912), true);
+    let a0 = 0x67452301, b0 = 0xefcdab89, c0 = 0x98badcfe, d0 = 0x10325476;
+    const M = new Uint32Array(16);
+    for (let o = 0; o < padded.length; o += 64) {
+      for (let i = 0; i < 16; i++) M[i] = dv.getUint32(o + i * 4, true);
+      let A = a0, B = b0, C = c0, D = d0;
+      for (let i = 0; i < 64; i++) {
+        let F, g;
+        if (i < 16) { F = (B & C) | (~B & D); g = i; }
+        else if (i < 32) { F = (D & B) | (~D & C); g = (5 * i + 1) % 16; }
+        else if (i < 48) { F = B ^ C ^ D; g = (3 * i + 5) % 16; }
+        else { F = C ^ (B | ~D); g = (7 * i) % 16; }
+        F = (F + A + K[i] + M[g]) >>> 0;
+        A = D; D = C; C = B;
+        const r = R[(i >> 4) * 4 + (i & 3)];
+        B = (B + ((F << r) | (F >>> (32 - r)))) >>> 0;
+      }
+      a0 = (a0 + A) >>> 0; b0 = (b0 + B) >>> 0; c0 = (c0 + C) >>> 0; d0 = (d0 + D) >>> 0;
+    }
+    const out = new Uint8Array(16), ov = new DataView(out.buffer);
+    ov.setUint32(0, a0, true); ov.setUint32(4, b0, true); ov.setUint32(8, c0, true); ov.setUint32(12, d0, true);
+    return out;
+  }
+
+  const SLOT_MD5 = 24, SLOT_TITLE = 44;
+  function isBinslot(bytes) {
+    return bytes.length >= 64 && String.fromCharCode.apply(null, bytes.subarray(0, 8)) === 'SAVE0001';
+  }
+  /** Returns a copy of the .binslot with the MD5 and the "Lv:N" title text matching the given .bin. */
+  function patchBinslot(slot, bin) {
+    if (!isBinslot(slot)) throw new Error('Bukan file .binslot P4G (magic SAVE0001 tidak ditemukan).');
+    const out = new Uint8Array(slot);
+    out.set(md5(bin), SLOT_MD5);
+    let end = out.indexOf(0, SLOT_TITLE); if (end < 0) end = out.length;
+    const title = String.fromCharCode.apply(null, out.subarray(SLOT_TITLE, end));
+    const m = /\sLv:\d+$/.exec(title.replace(/[^\x00-\x7f]/g, '?'));
+    if (m && bin.length > OFF.mcLevel) {
+      const start = SLOT_TITLE + m.index;
+      const text = ' Lv:' + bin[OFF.mcLevel];
+      let nxt = end; while (nxt < out.length && out[nxt] === 0 && nxt - start < 16) nxt++;
+      if (text.length <= nxt - start) {
+        out.fill(0, start, nxt);
+        for (let i = 0; i < text.length; i++) out[start + i] = text.charCodeAt(i);
+      }
+    }
+    return out;
+  }
+
   // ---------------------------------------------------------------- catalog
   function buildCatalog(db) {
     const range = (arr, start, len) => {
@@ -332,7 +391,7 @@
 
   return {
     OFF, INVENTORY_SIZE, MIN_FILE_SIZE, COMPENDIUM_COUNT,
-    parse, serialize, buildCatalog, newPersona, blankPersona,
+    parse, serialize, buildCatalog, md5, isBinslot, patchBinslot, newPersona, blankPersona,
     pointsToLevel, levelToPoints, xpForLevel,
     _internal: { readPString, writePString, writeJString, readPersona, writePersona },
   };

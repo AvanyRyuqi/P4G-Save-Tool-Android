@@ -16,6 +16,17 @@ Edit file save **Persona 4 Golden** (`.bin`, hasil dump dari PS Vita) langsung d
 Tambahan di versi Android: buka/simpan lewat file picker sistem, **cadangan otomatis** file asli sebelum ditimpa
 (`Android/data/app.p4gsavetool/files/backups/`), dan konfirmasi saat keluar bila ada perubahan belum disimpan.
 
+## Save Nintendo Switch
+
+Save Switch terdiri dari `data0001.bin` **dan** `data0001.binslot`. Di `.binslot` (offset 24) tersimpan MD5 dari `.bin`;
+bila tidak cocok setelah diedit, game menolak save-nya. Format `.bin` sendiri sama dengan Vita.
+
+* **Di aplikasi:** saat **Buka**, pilih `data0001.bin` dan `data0001.binslot` sekaligus. Saat **Simpan**, keduanya ditulis,
+  MD5 dan teks `Lv:N` di judul slot diperbarui otomatis, dan cadangan keduanya dibuat.
+* **Tanpa aplikasi:** `python tools/fix_binslot.py data0001.bin data0001.binslot`.
+* 16 byte di offset 8-24 `.binslot` tidak diketahui fungsinya dan dibiarkan apa adanya.
+  Fitur ini belum diuji langsung di konsol Switch; laporkan lewat Issues bila save tetap ditolak.
+
 ## Arsitektur
 
 ```
@@ -26,6 +37,7 @@ app/src/main/
     app.js, style.css, index.html  <- UI mobile
   java/app/p4gsavetool/MainActivity.kt  <- WebView + file picker (SAF) + backup
 tests/core.test.js <- tes logika dengan Node (tanpa Android)
+tools/fix_binslot.py <- perbaiki .binslot Switch dari command line
 ```
 
 Logika save sengaja ditulis sebagai JavaScript murni agar bisa dites tanpa emulator (`npm test`).

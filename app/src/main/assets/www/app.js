@@ -9,6 +9,8 @@
   let S = null;            // parsed save
   let orig = null;         // original bytes (base for serialize)
   let fileName = '';
+  let slotBytes = null;    // Switch: companion .binslot (optional)
+  let slotName = '';
   let dirty = false;
   let tab = 'stats';
   let memberIdx = 0;       // 0 = protagonist, 1..7 = party in file order
@@ -385,7 +387,7 @@
 
   function updateTopbar() {
     if (!titleSub) return;
-    titleSub.textContent = S ? (fileName || 'save') + (dirty ? ' — belum disimpan' : '') : 'Belum ada file dibuka';
+    titleSub.textContent = S ? (fileName || 'save') + (slotBytes ? ' + binslot' : '') + (dirty ? ' — belum disimpan' : '') : 'Belum ada file dibuka';
     titleSub.classList.toggle('dirty', !!(S && dirty));
     saveBtn.disabled = !S;
   }
@@ -425,6 +427,7 @@
         h('h1', null, 'Persona 4 Golden Save Tool'),
         h('p', null, 'Edit file save P4G (.bin) langsung dari ponsel: stats, persona, inventory, social link, compendium, dan lainnya.'),
         h('button', { class: 'btn accent', onclick: doOpen }, 'Buka file save'),
+        h('p', { class: 'hint' }, 'Save Switch: pilih data0001.bin dan data0001.binslot sekaligus agar checksum ikut diperbarui.'),
         h('p', { class: 'hint' }, 'Selalu simpan salinan cadangan file save aslimu sebelum mengedit.')));
       return;
     }
@@ -445,50 +448,71 @@
   const toB64 = (u8) => { let s = ''; const CH = 0x8000; for (let i = 0; i < u8.length; i += CH) s += String.fromCharCode.apply(null, u8.subarray(i, i + CH)); return btoa(s); };
   const fromB64 = (b64) => { const s = atob(b64); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; };
 
-  function loadBytes(name, bytes) {
+  function loadBytes(name, bytes, slot) {
     try {
       const parsed = P4G.parse(bytes);
+      if (slot && !P4G.isBinslot(slot.bytes)) throw new Error('File ' + slot.name + ' bukan .binslot P4G.');
       S = parsed; orig = bytes; fileName = name; dirty = false;
+      slotBytes = slot ? slot.bytes : null; slotName = slot ? slot.name : '';
       memberIdx = 0; slotIdx = 0; invFilter = ''; compFilter = ''; tab = 'stats';
       build();
-      toast('Dibuka: ' + name);
+      toast('Dibuka: ' + name + (slot ? ' + ' + slot.name : ''));
+      if (!slot) setTimeout(() => toast('Save Switch? Pilih juga file .binslot saat membuka.'), 2400);
     } catch (e) {
       toast(e.message || String(e), true);
     }
+  }
+  /** files: [{name, bytes}] - one .bin plus an optional .binslot, in any order. */
+  function loadFiles(files) {
+    const slot = files.find((f) => /\.binslot$/i.test(f.name));
+    const bin = files.find((f) => f !== slot);
+    if (!bin) { toast('Pilih file save .bin (dan .binslot untuk Switch).', true); return; }
+    loadBytes(bin.name, bin.bytes, slot);
   }
   async function doOpen() {
     if (dirty && !(await confirmDialog('Ada perubahan yang belum disimpan. Buka file lain dan buang perubahan?', 'Buka', true))) return;
     if (bridge) bridge.openFile();
     else {
-      const inp = h('input', { type: 'file' });
-      inp.addEventListener('change', async () => { const f = inp.files[0]; if (f) loadBytes(f.name, new Uint8Array(await f.arrayBuffer())); });
+      const inp = h('input', { type: 'file', multiple: true });
+      inp.addEventListener('change', async () => {
+        const files = [];
+        for (const f of inp.files) files.push({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) });
+        if (files.length) loadFiles(files);
+      });
       inp.click();
     }
   }
   function currentBytes() { return P4G.serialize(S, orig); }
+  function currentSlot(bin) { return slotBytes ? P4G.patchBinslot(slotBytes, bin) : null; }
+  function download(name, bytes) {
+    const a = h('a', { href: URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' })), download: name });
+    document.body.append(a); a.click(); a.remove();
+  }
   async function doSave() {
     if (!S) return;
     if (!bridge) return doSaveAs();
-    if (!(await confirmDialog('Timpa file "' + fileName + '" dengan perubahan ini? Cadangan otomatis disimpan di folder aplikasi.', 'Simpan'))) return;
-    const out = currentBytes();
-    bridge.saveFile(toB64(out));
-    pendingBytes = out;
+    const names = fileName + (slotBytes ? ' dan ' + slotName : '');
+    if (!(await confirmDialog('Timpa ' + names + ' dengan perubahan ini? Cadangan otomatis disimpan di folder aplikasi.', 'Simpan'))) return;
+    const out = currentBytes(), slot = currentSlot(out);
+    pendingBytes = out; pendingSlot = slot;
+    bridge.saveFile(toB64(out), slot ? toB64(slot) : '');
   }
   function doSaveAs() {
     if (!S) return;
-    const out = currentBytes();
-    if (bridge) { bridge.saveFileAs(fileName || 'save.bin', toB64(out)); pendingBytes = out; }
+    const out = currentBytes(), slot = currentSlot(out);
+    if (bridge) { pendingBytes = out; pendingSlot = slot; bridge.saveFileAs(fileName || 'save.bin', toB64(out), slotName, slot ? toB64(slot) : ''); }
     else {
-      const a = h('a', { href: URL.createObjectURL(new Blob([out], { type: 'application/octet-stream' })), download: fileName || 'save.bin' });
-      document.body.append(a); a.click(); a.remove(); orig = out; dirty = false; updateTopbar(); toast('File diunduh');
+      download(fileName || 'save.bin', out);
+      if (slot) setTimeout(() => download(slotName, slot), 400);
+      orig = out; if (slot) slotBytes = slot; dirty = false; updateTopbar(); toast('File diunduh');
     }
   }
-  let pendingBytes = null;
+  let pendingBytes = null, pendingSlot = null;
 
   // callbacks invoked by the Android host
-  window.__onFileOpened = (name, b64) => loadBytes(name, fromB64(b64));
-  window.__onSaved = (name) => { if (pendingBytes) { orig = pendingBytes; pendingBytes = null; } if (name) fileName = name; dirty = false; updateTopbar(); toast('Tersimpan: ' + fileName); };
-  window.__onError = (msg) => { pendingBytes = null; toast(msg, true); };
+  window.__onFilesOpened = (arr) => loadFiles(arr.map((f) => ({ name: f.name, bytes: fromB64(f.b64) })));
+  window.__onSaved = (name) => { if (pendingBytes) { orig = pendingBytes; pendingBytes = null; } if (pendingSlot) { slotBytes = pendingSlot; pendingSlot = null; } if (name) fileName = name; dirty = false; updateTopbar(); toast('Tersimpan: ' + fileName); };
+  window.__onError = (msg) => { pendingBytes = null; pendingSlot = null; toast(msg, true); };
   window.__back = () => {
     if (menuEl) { toggleMenu(); return 'handled'; }
     if (modals.length) { modals[modals.length - 1].close(); return 'handled'; }

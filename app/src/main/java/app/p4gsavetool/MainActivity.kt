@@ -8,19 +8,21 @@ import android.os.Bundle
 import android.provider.OpenableColumns
 import android.util.Base64
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Open document contract that also asks for write access, so "Simpan" can overwrite the opened file. */
-class OpenDocumentRW : ActivityResultContracts.OpenDocument() {
+/** Multi-select open contract that also asks for write access, so "Simpan" can overwrite the opened files. */
+class OpenDocumentsRW : ActivityResultContracts.OpenMultipleDocuments() {
     override fun createIntent(context: Context, input: Array<String>): Intent =
         super.createIntent(context, input).addFlags(
             Intent.FLAG_GRANT_READ_URI_PERMISSION or
@@ -33,32 +35,67 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var web: WebView
 
-    private var currentUri: Uri? = null
-    private var currentName: String = "save.bin"
-    private var originalBytes: ByteArray? = null   // bytes as first read, used for the automatic backup
+    // currently opened save: the .bin and (Switch only) its companion .binslot
+    private var binUri: Uri? = null
+    private var binName: String = "save.bin"
+    private var binOriginal: ByteArray? = null
+    private var slotUri: Uri? = null
+    private var slotName: String = ""
+    private var slotOriginal: ByteArray? = null
     private var backedUp = false
-    private var pendingSaveAs: ByteArray? = null
 
-    private val openLauncher = registerForActivityResult(OpenDocumentRW()) { uri ->
-        if (uri != null) handleOpened(uri)
+    // "Save as" state
+    private var pendingBin: ByteArray? = null
+    private var pendingSlotName: String = ""
+    private var pendingSlot: ByteArray? = null
+
+    private val openLauncher = registerForActivityResult(OpenDocumentsRW()) { uris ->
+        if (uris.isNotEmpty()) handleOpened(uris)
     }
 
-    private val createLauncher = registerForActivityResult(
+    private val createBinLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
-        val data = pendingSaveAs
-        pendingSaveAs = null
-        if (uri != null && data != null) {
-            try {
-                writeBytes(uri, data)
-                currentUri = uri
-                currentName = displayName(uri) ?: currentName
-                originalBytes = data
-                backedUp = true // the new file is already a copy
-                callJs("window.__onSaved(${JSONObject.quote(currentName)})")
-            } catch (e: Exception) {
-                reportError("Gagal menyimpan: ${e.message}")
+        val data = pendingBin
+        pendingBin = null
+        if (uri == null || data == null) {
+            pendingSlot = null
+            return@registerForActivityResult
+        }
+        try {
+            writeBytes(uri, data)
+            binUri = uri
+            binName = displayName(uri) ?: binName
+            binOriginal = data
+            backedUp = true // the new file is already a copy
+            if (pendingSlot != null) {
+                createSlotLauncher.launch(pendingSlotName.ifEmpty { "data0001.binslot" })
+            } else {
+                callJs("window.__onSaved(${JSONObject.quote(binName)})")
             }
+        } catch (e: Exception) {
+            pendingSlot = null
+            reportError("Gagal menyimpan: ${e.message}")
+        }
+    }
+
+    private val createSlotLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        val data = pendingSlot
+        pendingSlot = null
+        if (uri == null || data == null) {
+            reportError("File .binslot tidak disimpan. Save Switch butuh keduanya.")
+            return@registerForActivityResult
+        }
+        try {
+            writeBytes(uri, data)
+            slotUri = uri
+            slotName = displayName(uri) ?: slotName
+            slotOriginal = data
+            callJs("window.__onSaved(${JSONObject.quote(binName)})")
+        } catch (e: Exception) {
+            reportError("Gagal menyimpan .binslot: ${e.message}")
         }
     }
 
@@ -76,7 +113,7 @@ class MainActivity : AppCompatActivity() {
             allowContentAccess = false
         }
         web.webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 return !request.url.toString().startsWith("file:///android_asset/")
             }
         }
@@ -105,32 +142,42 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread { openLauncher.launch(arrayOf("*/*")) }
         }
 
+        /** Overwrite the opened .bin (and .binslot when slotBase64 is not empty). */
         @JavascriptInterface
-        fun saveFile(base64: String) {
-            val uri = currentUri
+        fun saveFile(binBase64: String, slotBase64: String) {
+            val uri = binUri
             if (uri == null) {
-                saveFileAs(currentName, base64)
+                saveFileAs(binName, binBase64, slotName, slotBase64)
+                return
+            }
+            val sUri = slotUri
+            if (slotBase64.isNotEmpty() && sUri == null) {
+                saveFileAs(binName, binBase64, slotName, slotBase64)
                 return
             }
             try {
-                val data = Base64.decode(base64, Base64.DEFAULT)
+                val bin = Base64.decode(binBase64, Base64.DEFAULT)
+                val slot = if (slotBase64.isNotEmpty()) Base64.decode(slotBase64, Base64.DEFAULT) else null
                 backupOnce()
-                writeBytes(uri, data)
-                callJs("window.__onSaved(${JSONObject.quote(currentName)})")
+                writeBytes(uri, bin)
+                if (slot != null && sUri != null) writeBytes(sUri, slot)
+                callJs("window.__onSaved(${JSONObject.quote(binName)})")
             } catch (e: Exception) {
                 reportError("Gagal menyimpan: ${e.message}")
             }
         }
 
         @JavascriptInterface
-        fun saveFileAs(suggestedName: String, base64: String) {
+        fun saveFileAs(suggestedName: String, binBase64: String, slotSuggestedName: String, slotBase64: String) {
             try {
-                pendingSaveAs = Base64.decode(base64, Base64.DEFAULT)
+                pendingBin = Base64.decode(binBase64, Base64.DEFAULT)
+                pendingSlot = if (slotBase64.isNotEmpty()) Base64.decode(slotBase64, Base64.DEFAULT) else null
+                pendingSlotName = slotSuggestedName
             } catch (e: Exception) {
                 reportError("Data tidak valid: ${e.message}")
                 return
             }
-            runOnUiThread { createLauncher.launch(suggestedName) }
+            runOnUiThread { createBinLauncher.launch(suggestedName) }
         }
 
         @JavascriptInterface
@@ -140,23 +187,39 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ------------------------------------------------------------- file I/O
-    private fun handleOpened(uri: Uri) {
+    private fun handleOpened(uris: List<Uri>) {
         try {
-            try {
-                contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            var bin: Pair<Uri, ByteArray>? = null
+            var slot: Pair<Uri, ByteArray>? = null
+            val files = JSONArray()
+            for (uri in uris) {
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    )
+                } catch (ignored: Exception) {
+                    // provider does not support persistable grants; the grant lasts for this session
+                }
+                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw IllegalStateException("tidak bisa membaca file")
+                val name = displayName(uri) ?: "save.bin"
+                if (name.endsWith(".binslot", ignoreCase = true)) {
+                    slot = Pair(uri, bytes); slotName = name
+                } else if (bin == null) {
+                    bin = Pair(uri, bytes); binName = name
+                }
+                files.put(
+                    JSONObject()
+                        .put("name", name)
+                        .put("b64", Base64.encodeToString(bytes, Base64.NO_WRAP))
                 )
-            } catch (ignored: Exception) {
-                // provider does not support persistable grants; the grant lasts for this session
             }
-            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: throw IllegalStateException("tidak bisa membaca file")
-            currentUri = uri
-            currentName = displayName(uri) ?: "save.bin"
-            originalBytes = bytes
+            if (bin == null) throw IllegalStateException("pilih file save .bin")
+            binUri = bin.first; binOriginal = bin.second
+            slotUri = slot?.first; slotOriginal = slot?.second
+            if (slot == null) slotName = ""
             backedUp = false
-            val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
-            callJs("window.__onFileOpened(${JSONObject.quote(currentName)}, \"$b64\")")
+            callJs("window.__onFilesOpened($files)")
         } catch (e: Exception) {
             reportError("Gagal membuka file: ${e.message}")
         }
@@ -168,13 +231,13 @@ class MainActivity : AppCompatActivity() {
         out.use { it.write(data); it.flush() }
     }
 
-    /** Keeps a copy of the file exactly as it was first opened, once per opened file. */
+    /** Keeps copies of the files exactly as first opened, once per opened save. */
     private fun backupOnce() {
         if (backedUp) return
-        val bytes = originalBytes ?: return
         val dir = File(getExternalFilesDir(null) ?: filesDir, "backups").apply { mkdirs() }
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-        File(dir, "$currentName-$stamp.bak").writeBytes(bytes)
+        binOriginal?.let { File(dir, "$binName-$stamp.bak").writeBytes(it) }
+        slotOriginal?.let { File(dir, "$slotName-$stamp.bak").writeBytes(it) }
         backedUp = true
     }
 

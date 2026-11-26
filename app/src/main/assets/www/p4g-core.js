@@ -240,7 +240,8 @@
 
   // ------------------------------------------------- Switch .binslot support
   // The Switch version keeps a "<name>.binslot" next to "<name>.bin". Offset 24
-  // of it holds the MD5 of the .bin; if it does not match, the game rejects the save.
+  // of it holds the MD5 of the .bin (offset 24) and a second MD5 over the slot's own data (offset 8,
+  // see zarroboogs/p4g-saveconv). The game rejects the save when either does not match.
   function md5(bytes) {
     const K = new Uint32Array(64), R = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21];
     for (let i = 0; i < 64; i++) K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 4294967296) >>> 0;
@@ -293,6 +294,10 @@
         for (let i = 0; i < text.length; i++) out[start + i] = text.charCodeAt(i);
       }
     }
+    // SlotFile_MD5 (offset 8) = MD5(slot[0x28:] + "P4GOLDEN"); depends on the title text patched above
+    const tail = out.subarray(0x28), buf = new Uint8Array(tail.length + 8);
+    buf.set(tail); for (let k = 0; k < 8; k++) buf[tail.length + k] = 'P4GOLDEN'.charCodeAt(k);
+    out.set(md5(buf), 8);
     return out;
   }
 

@@ -6,6 +6,7 @@ Pemakaian:  python fix_binslot.py data0001.bin data0001.binslot [output.binslot]
 Yang dilakukan:
   1. Mengganti MD5 di offset 24 (checksum isi .bin) dengan MD5 .bin yang baru.
   2. Memperbarui teks judul slot "... Lv:N" sesuai level protagonist di .bin.
+  3. Menghitung ulang MD5 slot di offset 8 = MD5(slot[0x28:] + b"P4GOLDEN").
 File .binslot asli dicadangkan sebagai <nama>.orig bila output = file yang sama.
 """
 import hashlib, sys, shutil, re
@@ -28,6 +29,7 @@ def fix(bin_bytes: bytes, slot: bytes) -> bytes:
             while nxt < len(slot) and slot[nxt] == 0 and nxt - start < 16: nxt += 1
             if len(new) <= nxt - start:
                 slot[start:nxt] = new + b'\0' * (nxt - start - len(new))
+    slot[8:24] = hashlib.md5(bytes(slot[0x28:]) + b'P4GOLDEN').digest()
     return bytes(slot)
 
 if __name__ == '__main__':

@@ -125,12 +125,14 @@ test('patchBinslot updates md5 and Lv text only', () => {
   const crypto = require('crypto');
   const bin = fakeSave(); bin[OFF.mcLevel] = 57;
   const slot = new Uint8Array(884);
-  slot.set(Buffer.from('SAVE0001')); slot.set(rnd(16, 3), 8); slot.set(rnd(16, 4), 24);
+  slot.set(Buffer.from('SAVE0001')); slot.set(rnd(16, 4), 24);
   slot.set(Buffer.from('Yu Narukami Lv:1'), 44); slot.set(Buffer.from('04/10:Noche:RESERVE'), 108);
   const out = P4G.patchBinslot(slot, bin);
   assert.strictEqual(Buffer.from(out.subarray(24, 40)).toString('hex'), crypto.createHash('md5').update(bin).digest('hex'));
   assert.strictEqual(Buffer.from(out.subarray(44, 70)).toString().replace(/\0+$/, ''), 'Yu Narukami Lv:57');
-  assert.deepStrictEqual(Buffer.from(out.subarray(8, 24)), Buffer.from(slot.subarray(8, 24))); // unknown field untouched
   assert.deepStrictEqual(Buffer.from(out.subarray(108)), Buffer.from(slot.subarray(108)));
+  // second MD5 over the slot data (offset 8) must follow the changed title
+  const tail = Buffer.concat([Buffer.from(out.subarray(0x28)), Buffer.from('P4GOLDEN')]);
+  assert.strictEqual(Buffer.from(out.subarray(8, 24)).toString('hex'), crypto.createHash('md5').update(tail).digest('hex'));
   assert.throws(() => P4G.patchBinslot(new Uint8Array(100), bin));
 });

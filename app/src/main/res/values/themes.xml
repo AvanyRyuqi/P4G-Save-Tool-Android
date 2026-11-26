@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.P4G" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/p4g_bg</item>
+        <item name="android:statusBarColor">@color/p4g_surface</item>
+        <item name="android:navigationBarColor">@color/p4g_surface</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

@@ -1,0 +1,9 @@
+{
+  "name": "p4g-save-tool-android",
+  "private": true,
+  "version": "1.0.0",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test tests/core.test.js"
+  }
+}

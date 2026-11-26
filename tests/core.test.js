@@ -136,3 +136,17 @@ test('patchBinslot updates md5 and Lv text only', () => {
   assert.strictEqual(Buffer.from(out.subarray(8, 24)).toString('hex'), crypto.createHash('md5').update(tail).digest('hex'));
   assert.throws(() => P4G.patchBinslot(new Uint8Array(100), bin));
 });
+
+test('i18n: both languages have identical keys/placeholders and app.js only uses existing keys', () => {
+  const win = {}; new Function('window', fs.readFileSync(path.join(__dirname, '../app/src/main/assets/www/i18n.js'), 'utf8'))(win);
+  const { id, en } = win.P4G_I18N;
+  assert.deepStrictEqual(Object.keys(id).sort(), Object.keys(en).sort());
+  const ph = (s) => (s.match(/\{\w+\}/g) || []).sort().join();
+  for (const k of Object.keys(id)) assert.strictEqual(ph(id[k]), ph(en[k]), 'placeholders differ: ' + k);
+  const app = fs.readFileSync(path.join(__dirname, '../app/src/main/assets/www/app.js'), 'utf8');
+  const used = new Set([...app.matchAll(/\bt\('([a-z_0-9]+)'[,)]/g)].map((m) => m[1]));
+  ['tab_stats', 'tab_inv', 'tab_social', 'tab_comp', 'tab_other'].forEach((k) => used.add(k)); // used via TABS
+  for (const k of used) assert.ok(k in en, 'missing i18n key: ' + k);
+  // error codes thrown by the core / sent by Kotlin need an err_* text
+  for (const c of ['too_small', 'not_binslot', 'open_fail', 'save_fail', 'slot_save_fail', 'slot_not_saved', 'invalid_data']) assert.ok(('err_' + c) in en, c);
+});

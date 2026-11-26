@@ -1,0 +1,88 @@
+/* UI strings. Game data (items, skills, personas, stat names) stays in English in both languages. */
+window.P4G_I18N = {
+  id: {
+    lang_name: 'Bahasa Indonesia',
+    // generic
+    ok: 'OK', cancel: 'Batal', close: 'Tutup', choose: 'Pilih', delete: 'Hapus', add: '+ Tambah', delete_all: 'Hapus semua',
+    open: 'Buka', save: 'Simpan', menu: 'Menu', save_as: 'Simpan sebagai…', about: 'Tentang', language: 'Bahasa / Language',
+    no_results: 'Tidak ada hasil', skill: 'Skill', level: 'Level',
+    // picker
+    search_ph: 'Cari nama atau ID…', clear_search: 'Hapus pencarian', n_results: '{n} hasil', n_options: '{n} pilihan',
+    show_more: 'Tampilkan lebih banyak ({n})', no_results_for: 'Tidak ada hasil untuk "{q}"',
+    // tabs
+    tab_stats: 'Stats', tab_inv: 'Inventory', tab_social: 'Social', tab_comp: 'Compendium', tab_other: 'Lainnya',
+    // stats
+    protagonist: 'Protagonist', yen: 'Yen', total_xp: 'Total XP', from_level: 'Dari level', persona: 'Persona',
+    slot_n: 'Slot {n}', skill_n: 'Skill {n}', equipment: 'Equipment', rise_no_equip: 'Rise tidak memiliki slot equipment di save file.',
+    weapon: 'Weapon', armor: 'Armor', accessory: 'Accessory', costume: 'Costume', social_stats: 'Social Stats', points: '{n} poin',
+    party_config: 'Party Configuration', member_n: 'Member {n}',
+    // inventory
+    inv_search: 'Cari item di inventory…', add_section: '+ Tambah {s}', add_section_title: 'Tambah {s}', section_empty: 'Section ini kosong',
+    already_in_inv: 'Sudah ada di inventory (×{n})', added: 'Ditambahkan: {name}', inv_empty: 'Inventory kosong. Tambahkan item di atas.',
+    // social
+    max_links: 'Maksimal 23 social link', all_links_added: 'Semua link sudah ditambahkan', add_link_title: 'Tambah Social Link',
+    add_link: '+ Tambah Social Link', no_links: 'Belum ada social link.', progress: 'Progress',
+    // compendium
+    comp_search: 'Cari persona…', comp_remove: 'Hapus dari compendium', comp_add_title: 'Tambah ke Compendium', registered: '✓ terdaftar',
+    comp_bad_id: 'ID persona tidak bisa disimpan di compendium', comp_delete_all_q: 'Hapus semua {n} persona dari compendium?', comp_empty: 'Compendium kosong.',
+    // other
+    date: 'Tanggal', day: 'Day', phase: 'Phase', next_day: 'Next Day', next_phase: 'Next Phase', hero_name: 'Nama Protagonist',
+    first_name: 'First name', surname: 'Surname', name_hint: 'Maksimal 9 karakter. Huruf, angka, dan simbol umum didukung.',
+    // chrome
+    no_file: 'Belum ada file dibuka', unsaved: ' — belum disimpan',
+    welcome_title: 'Persona 4 Golden Save Tool',
+    welcome_text: 'Edit file save P4G (.bin) langsung dari ponsel: stats, persona, inventory, social link, compendium, dan lainnya.',
+    open_save: 'Buka file save',
+    switch_hint: 'Save Switch: pilih data0001.bin dan data0001.binslot sekaligus agar checksum ikut diperbarui.',
+    backup_hint: 'Selalu simpan salinan cadangan file save aslimu sebelum mengedit.',
+    about_1: 'P4G Save Tool untuk Android. Port dari P4G Save Tool (WPF) oleh Jack P. Fenech (Fennec-kun), lisensi MIT.',
+    about_2: 'Aslinya ditulis oleh Fennec-kun dengan bantuan TGE, Shrinefox, dan Pan dari Amicitia. Dimungkinkan oleh HENkaku.',
+    about_3: 'Repo asli: github.com/Fennec-kun/P4G-Save-Tool',
+    // file I/O
+    opened: 'Dibuka: {name}', switch_pick_slot: 'Save Switch? Pilih juga file .binslot saat membuka.', not_binslot_named: 'File {name} bukan .binslot P4G.',
+    pick_bin: 'Pilih file save .bin (dan .binslot untuk Switch).', discard_open: 'Ada perubahan yang belum disimpan. Buka file lain dan buang perubahan?',
+    overwrite_q: 'Timpa {names} dengan perubahan ini? Cadangan otomatis disimpan di folder aplikasi.', and: 'dan', downloaded: 'File diunduh',
+    saved: 'Tersimpan: {name}', exit_q: 'Ada perubahan yang belum disimpan. Keluar dari aplikasi?', exit: 'Keluar',
+    // errors
+    err_too_small: 'File terlalu kecil ({size} byte) untuk save P4G. Minimal {min} byte.', err_not_binslot: 'Bukan file .binslot P4G (magic SAVE0001 tidak ditemukan).',
+    err_open_fail: 'Gagal membuka file: {detail}', err_save_fail: 'Gagal menyimpan: {detail}', err_slot_save_fail: 'Gagal menyimpan .binslot: {detail}',
+    err_slot_not_saved: 'File .binslot tidak disimpan. Save Switch butuh keduanya.', err_invalid_data: 'Data tidak valid: {detail}',
+  },
+  en: {
+    lang_name: 'English',
+    ok: 'OK', cancel: 'Cancel', close: 'Close', choose: 'Choose', delete: 'Delete', add: '+ Add', delete_all: 'Delete all',
+    open: 'Open', save: 'Save', menu: 'Menu', save_as: 'Save as…', about: 'About', language: 'Language / Bahasa',
+    no_results: 'No results', skill: 'Skill', level: 'Level',
+    search_ph: 'Search by name or ID…', clear_search: 'Clear search', n_results: '{n} results', n_options: '{n} options',
+    show_more: 'Show more ({n})', no_results_for: 'No results for "{q}"',
+    tab_stats: 'Stats', tab_inv: 'Inventory', tab_social: 'Social', tab_comp: 'Compendium', tab_other: 'Other',
+    protagonist: 'Protagonist', yen: 'Yen', total_xp: 'Total XP', from_level: 'From level', persona: 'Persona',
+    slot_n: 'Slot {n}', skill_n: 'Skill {n}', equipment: 'Equipment', rise_no_equip: 'Rise has no equipment slot in the save file.',
+    weapon: 'Weapon', armor: 'Armor', accessory: 'Accessory', costume: 'Costume', social_stats: 'Social Stats', points: '{n} pts',
+    party_config: 'Party Configuration', member_n: 'Member {n}',
+    inv_search: 'Search items in inventory…', add_section: '+ Add {s}', add_section_title: 'Add {s}', section_empty: 'This section is empty',
+    already_in_inv: 'Already in inventory (×{n})', added: 'Added: {name}', inv_empty: 'Inventory is empty. Add items above.',
+    max_links: 'Maximum of 23 social links', all_links_added: 'All links have been added', add_link_title: 'Add Social Link',
+    add_link: '+ Add Social Link', no_links: 'No social links yet.', progress: 'Progress',
+    comp_search: 'Search persona…', comp_remove: 'Remove from compendium', comp_add_title: 'Add to Compendium', registered: '✓ registered',
+    comp_bad_id: 'This persona ID cannot be stored in the compendium', comp_delete_all_q: 'Remove all {n} personas from the compendium?', comp_empty: 'Compendium is empty.',
+    date: 'Date', day: 'Day', phase: 'Phase', next_day: 'Next Day', next_phase: 'Next Phase', hero_name: 'Protagonist name',
+    first_name: 'First name', surname: 'Surname', name_hint: 'Up to 9 characters. Letters, digits and common symbols are supported.',
+    no_file: 'No file opened', unsaved: ' — unsaved',
+    welcome_title: 'Persona 4 Golden Save Tool',
+    welcome_text: 'Edit P4G save files (.bin) right from your phone: stats, personas, inventory, social links, compendium and more.',
+    open_save: 'Open save file',
+    switch_hint: 'Switch saves: select data0001.bin and data0001.binslot together so the checksums get updated too.',
+    backup_hint: 'Always keep a backup copy of your original save before editing.',
+    about_1: 'P4G Save Tool for Android. A port of P4G Save Tool (WPF) by Jack P. Fenech (Fennec-kun), MIT license.',
+    about_2: 'Originally written by Fennec-kun with help from TGE, Shrinefox and Pan of Amicitia. Made possible by HENkaku.',
+    about_3: 'Original repo: github.com/Fennec-kun/P4G-Save-Tool',
+    opened: 'Opened: {name}', switch_pick_slot: 'Switch save? Also select the .binslot file when opening.', not_binslot_named: '{name} is not a P4G .binslot.',
+    pick_bin: 'Select the .bin save file (and the .binslot for Switch).', discard_open: 'You have unsaved changes. Open another file and discard them?',
+    overwrite_q: 'Overwrite {names} with these changes? A backup is saved automatically in the app folder.', and: 'and', downloaded: 'File downloaded',
+    saved: 'Saved: {name}', exit_q: 'You have unsaved changes. Exit the app?', exit: 'Exit',
+    err_too_small: 'File is too small ({size} bytes) for a P4G save. Minimum is {min} bytes.', err_not_binslot: 'Not a P4G .binslot file (SAVE0001 magic not found).',
+    err_open_fail: 'Could not open file: {detail}', err_save_fail: 'Could not save: {detail}', err_slot_save_fail: 'Could not save .binslot: {detail}',
+    err_slot_not_saved: 'The .binslot was not saved. Switch saves need both files.', err_invalid_data: 'Invalid data: {detail}',
+  },
+};

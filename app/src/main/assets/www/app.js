@@ -4,6 +4,23 @@
   const DB = window.P4G_DB;
   const CAT = P4G.buildCatalog(DB);
   const bridge = window.AndroidBridge || null;
+  const STR = window.P4G_I18N;
+  let lang = 'id';
+  try { const l = localStorage.getItem('p4g-lang'); if (STR[l]) lang = l; } catch (e) { /* storage unavailable */ }
+  /** Translate a key; {name} placeholders are filled from vars. Falls back to English, then the key. */
+  const t = (key, vars) => {
+    let str = (STR[lang] && STR[lang][key]) || STR.en[key] || key;
+    if (vars) for (const k in vars) str = str.split('{' + k + '}').join(vars[k] == null ? '' : vars[k]);
+    return str;
+  };
+  function setLang(l) {
+    if (!STR[l] || l === lang) return;
+    lang = l;
+    try { localStorage.setItem('p4g-lang', l); } catch (e) { /* ignore */ }
+    document.documentElement.lang = l;
+    build();
+  }
+  document.documentElement.lang = lang;
 
   // ----------------------------------------------------------------- state
   let S = null;            // parsed save
@@ -46,10 +63,10 @@
     if (!dirty) { dirty = true; updateTopbar(); }
   }
   function toast(msg, err) {
-    document.querySelectorAll('.toast').forEach((t) => t.remove());
-    const t = h('div', { class: 'toast' + (err ? ' err' : '') }, msg);
-    document.body.append(t);
-    setTimeout(() => t.remove(), err ? 4500 : 2200);
+    document.querySelectorAll('.toast').forEach((el) => el.remove());
+    const box = h('div', { class: 'toast' + (err ? ' err' : '') }, msg);
+    document.body.append(box);
+    setTimeout(() => box.remove(), err ? 4500 : 2200);
   }
 
   // ------------------------------------------------------------ modal stack
@@ -59,7 +76,7 @@
     const scrim = h('div', { class: 'scrim' });
     const close = () => { const i = modals.indexOf(entry); if (i >= 0) modals.splice(i, 1); scrim.remove(); if (opts.onClose) opts.onClose(); };
     const sheet = h('div', { class: 'sheet' + (opts.full ? ' full' : '') },
-      h('header', null, h('h4', null, title), h('button', { class: 'iconbtn', onclick: close, 'aria-label': 'Tutup' }, '✕')),
+      h('header', null, h('h4', null, title), h('button', { class: 'iconbtn', onclick: close, 'aria-label': t('close') }, '✕')),
       h('div', { class: 'body' }, bodyEl));
     scrim.append(sheet);
     scrim.addEventListener('click', (e) => { if (e.target === scrim) close(); });
@@ -75,8 +92,8 @@
       const done = (v) => { const i = modals.indexOf(entry); if (i >= 0) modals.splice(i, 1); scrim.remove(); resolve(v); };
       scrim.append(h('div', { class: 'dialog' }, h('p', null, message),
         h('div', { class: 'btns' },
-          h('button', { class: 'btn', onclick: () => done(false) }, 'Batal'),
-          h('button', { class: 'btn ' + (danger ? 'danger' : 'accent'), onclick: () => done(true) }, okLabel || 'OK'))));
+          h('button', { class: 'btn', onclick: () => done(false) }, t('cancel')),
+          h('button', { class: 'btn ' + (danger ? 'danger' : 'accent'), onclick: () => done(true) }, okLabel || t('ok')))));
       modals.push(entry);
       document.body.append(scrim);
     });
@@ -90,8 +107,8 @@
       let chosen, limit = PAGE, handle;
       const list = h('div');
       const count = h('small', { class: 'hint', style: 'display:block;margin:2px 2px 0' });
-      const search = h('input', { type: 'text', placeholder: 'Cari nama atau ID…', autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false', enterkeyhint: 'search' });
-      const clear = h('button', { class: 'clearbtn', type: 'button', 'aria-label': 'Hapus pencarian', hidden: true, onclick: () => { search.value = ''; limit = PAGE; render(); search.focus(); } }, '✕');
+      const search = h('input', { type: 'text', placeholder: t('search_ph'), autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false', enterkeyhint: 'search' });
+      const clear = h('button', { class: 'clearbtn', type: 'button', 'aria-label': t('clear_search'), hidden: true, onclick: () => { search.value = ''; limit = PAGE; render(); search.focus(); } }, '✕');
       const bar = h('div', { class: 'searchbar' }, h('div', { class: 'searchwrap' }, search, clear), count);
       const lower = options.map((o) => o.name.toLowerCase());
       const matches = () => {
@@ -100,19 +117,19 @@
         const hit = [];
         options.forEach((o, i) => {
           const n = lower[i], id = String(o.id);
-          if (tokens.every((t) => n.includes(t) || id === t.replace(/^#/, '') || (/^#?\d+$/.test(t) && id.startsWith(t.replace(/^#/, ''))))) hit.push([n.startsWith(tokens[0]) ? 0 : 1, i]);
+          if (tokens.every((w) => n.includes(w) || id === w.replace(/^#/, '') || (/^#?\d+$/.test(w) && id.startsWith(w.replace(/^#/, ''))))) hit.push([n.startsWith(tokens[0]) ? 0 : 1, i]);
         });
         return hit.sort((x, y) => x[0] - y[0] || x[1] - y[1]).map((x) => options[x[1]]); // prefix matches first
       };
       const render = () => {
         const res = matches();
         clear.hidden = !search.value;
-        count.textContent = search.value.trim() ? res.length + ' hasil' : options.length + ' pilihan';
+        count.textContent = search.value.trim() ? t('n_results', { n: res.length }) : t('n_options', { n: options.length });
         list.replaceChildren();
         res.slice(0, limit).forEach((o) => list.append(h('button', { class: 'opt' + (o.id === currentId ? ' on' : ''), onclick: () => { chosen = o.id; handle.close(); } },
           h('span', null, o.name), h('small', null, o.sub != null ? o.sub : '#' + o.id))));
-        if (res.length > limit) list.append(h('button', { class: 'btn', style: 'width:100%;margin-top:8px', onclick: () => { limit += PAGE; render(); } }, 'Tampilkan lebih banyak (' + (res.length - limit) + ')'));
-        if (!res.length) list.append(h('p', { class: 'empty' }, 'Tidak ada hasil untuk "' + search.value.trim() + '"'));
+        if (res.length > limit) list.append(h('button', { class: 'btn', style: 'width:100%;margin-top:8px', onclick: () => { limit += PAGE; render(); } }, t('show_more', { n: res.length - limit })));
+        if (!res.length) list.append(h('p', { class: 'empty' }, t('no_results_for', { q: search.value.trim() })));
       };
       search.addEventListener('input', () => { limit = PAGE; render(); });
       handle = openSheet(title, h('div', null, bar, list), { full: true, onClose: () => resolve(chosen) });
@@ -134,7 +151,7 @@
     };
     btn.addEventListener('click', async () => {
       const id = getId();
-      const r = await pick(title || 'Pilih', withUnknown(options, id), id);
+      const r = await pick(title || t('choose'), withUnknown(options, id), id);
       if (r !== undefined && r !== id) { setId(r); markDirty(); refresh(); }
     });
     refresh();
@@ -166,25 +183,25 @@
   function personaEditor(p, opts) {
     const el = h('div');
     if (opts.idPicker) {
-      el.append(row('Persona', selectField(CAT.personae, () => p.id, (id) => {
+      el.append(row(t('persona'), selectField(CAT.personae, () => p.id, (id) => {
         p.id = id;
         if (p.level === 0 && id !== 0 && !p.exists) p.level = 1;
         p.exists = id !== 0;
         opts.onIdChange && opts.onIdChange();
-      }, 'Persona')));
+      }, t('persona'))));
     }
     const lvWrap = h('div');
     lvWrap.append(slider('Lv', () => p.level, (v) => { p.level = v; }, 1, 255, 99));
     el.append(lvWrap);
     const xpInput = numField(() => p.totalxp, (v) => { p.totalxp = v; }, 0, 4294967295);
     xpInput.style.maxWidth = 'none';
-    el.append(h('div', { class: 'row' }, h('label', null, 'Total XP'), h('div', { class: 'grow' }, xpInput),
-      h('button', { class: 'btn small', onclick: () => { p.totalxp = P4G.xpForLevel(p.level); xpInput.value = String(p.totalxp); markDirty(); } }, 'Dari level')));
+    el.append(h('div', { class: 'row' }, h('label', null, t('total_xp')), h('div', { class: 'grow' }, xpInput),
+      h('button', { class: 'btn small', onclick: () => { p.totalxp = P4G.xpForLevel(p.level); xpInput.value = String(p.totalxp); markDirty(); } }, t('from_level'))));
     [['ST', 'st'], ['MA', 'ma'], ['DE', 'de'], ['AG', 'ag'], ['LU', 'lu']].forEach(([lbl, k]) =>
       el.append(slider(lbl, () => p[k], (v) => { p[k] = v; }, 0, 255)));
-    el.append(h('p', { class: 'hint' }, 'Skill'));
+    el.append(h('p', { class: 'hint' }, t('skill')));
     for (let i = 0; i < 8; i++) {
-      el.append(row('Skill ' + (i + 1), selectField(CAT.skills, () => p.skills[i], (id) => { p.skills[i] = id; }, 'Skill ' + (i + 1))));
+      el.append(row(t('skill_n', { n: i + 1 }), selectField(CAT.skills, () => p.skills[i], (id) => { p.skills[i] = id; }, t('skill_n', { n: i + 1 }))));
     }
     return el;
   }
@@ -200,13 +217,13 @@
     wrap.append(chips);
 
     if (memberIdx === 0) {
-      wrap.append(card('Protagonist',
-        row('Yen', numField(() => S.yen, (v) => { S.yen = v; }, 0, 4294967295)),
+      wrap.append(card(t('protagonist'),
+        row(t('yen'), numField(() => S.yen, (v) => { S.yen = v; }, 0, 4294967295)),
         slider('Lv', () => S.mcLevel, (v) => { S.mcLevel = v; }, 1, 255, 99),
         (() => {
           const xp = numField(() => S.mcXp, (v) => { S.mcXp = v; }, 0, 4294967295);
-          return h('div', { class: 'row' }, h('label', null, 'Total XP'), h('div', { class: 'grow' }, xp),
-            h('button', { class: 'btn small', onclick: () => { S.mcXp = P4G.xpForLevel(S.mcLevel); xp.value = String(S.mcXp); markDirty(); } }, 'Dari level'));
+          return h('div', { class: 'row' }, h('label', null, t('total_xp')), h('div', { class: 'grow' }, xp),
+            h('button', { class: 'btn small', onclick: () => { S.mcXp = P4G.xpForLevel(S.mcLevel); xp.value = String(S.mcXp); markDirty(); } }, t('from_level')));
         })()));
     }
 
@@ -215,42 +232,42 @@
     const slotRow = [];
     if (memberIdx === 0) {
       const chipsSlot = h('div', { class: 'chips' });
-      for (let i = 0; i < 12; i++) chipsSlot.append(h('button', { class: 'chip' + (i === slotIdx ? ' on' : ''), onclick: () => { slotIdx = i; render(); } }, 'Slot ' + (i + 1)));
+      for (let i = 0; i < 12; i++) chipsSlot.append(h('button', { class: 'chip' + (i === slotIdx ? ' on' : ''), onclick: () => { slotIdx = i; render(); } }, t('slot_n', { n: i + 1 })));
       slotRow.push(chipsSlot);
       p = S.mcSlots[slotIdx];
     } else {
       p = S.memberPersona[memberIdx];
     }
-    wrap.append(card('Persona', slotRow, personaEditor(p, { idPicker: true, onIdChange: render })));
+    wrap.append(card(t('persona'), slotRow, personaEditor(p, { idPicker: true, onIdChange: render })));
 
     // equipment
     const eq = CAT.members[memberIdx].equipId;
     if (memberIdx === 4) {
-      wrap.append(card('Equipment', h('p', { class: 'hint' }, 'Rise tidak memiliki slot equipment di save file.')));
+      wrap.append(card(t('equipment'), h('p', { class: 'hint' }, t('rise_no_equip'))));
     } else {
       const wl = CAT.weaponsByMember[eq];
-      wrap.append(card('Equipment',
-        row('Weapon', selectField(wl, () => S.equip.weapon[eq], (id) => { S.equip.weapon[eq] = id; }, 'Weapon')),
-        row('Armor', selectField(CAT.armor, () => S.equip.armor[eq], (id) => { S.equip.armor[eq] = id; }, 'Armor')),
-        row('Accessory', selectField(CAT.accessories, () => S.equip.accessory[eq], (id) => { S.equip.accessory[eq] = id; }, 'Accessory')),
-        row('Costume', selectField(CAT.costumes, () => S.equip.costume[eq], (id) => { S.equip.costume[eq] = id; }, 'Costume'))));
+      wrap.append(card(t('equipment'),
+        row(t('weapon'), selectField(wl, () => S.equip.weapon[eq], (id) => { S.equip.weapon[eq] = id; }, t('weapon'))),
+        row(t('armor'), selectField(CAT.armor, () => S.equip.armor[eq], (id) => { S.equip.armor[eq] = id; }, t('armor'))),
+        row(t('accessory'), selectField(CAT.accessories, () => S.equip.accessory[eq], (id) => { S.equip.accessory[eq] = id; }, t('accessory'))),
+        row(t('costume'), selectField(CAT.costumes, () => S.equip.costume[eq], (id) => { S.equip.costume[eq] = id; }, t('costume')))));
     }
 
     if (memberIdx === 0) {
       // social stats
-      const sc = card('Social Stats');
+      const sc = card(t('social_stats'));
       CAT.statNames.forEach((nm, st) => {
         const lvls = CAT.statLevels[st].map((n, i) => ({ id: i + 1, name: n, sub: 'Lv ' + (i + 1) }));
         const pts = h('small', { class: 'hint' });
-        const paint = () => { pts.textContent = S.socialStats[st] + ' poin'; };
+        const paint = () => { pts.textContent = t('points', { n: S.socialStats[st] }); };
         const sel = selectField(lvls, () => P4G.pointsToLevel(st, S.socialStats[st]),
           (lv) => { S.socialStats[st] = P4G.levelToPoints(st, lv); paint(); }, nm);
         paint();
         sc.append(row(nm, sel), h('div', { style: 'margin:-4px 0 6px 106px' }, pts));
       });
       // party config
-      wrap.append(sc, card('Party Configuration', [0, 1, 2].map((i) =>
-        row('Member ' + (i + 1), selectField(CAT.partyChoices, () => S.party[i], (id) => { S.party[i] = id; }, 'Member ' + (i + 1))))));
+      wrap.append(sc, card(t('party_config'), [0, 1, 2].map((i) =>
+        row(t('member_n', { n: i + 1 }), selectField(CAT.partyChoices, () => S.party[i], (id) => { S.party[i] = id; }, t('member_n', { n: i + 1 }))))));
     }
     return wrap;
   }
@@ -262,16 +279,16 @@
     CAT.sections.forEach((s, i) => chips.append(h('button', { class: 'chip' + (i === invSection ? ' on' : ''), onclick: () => { invSection = i; render(); } }, s.name)));
     wrap.append(chips);
 
-    const search = h('input', { class: 'search', type: 'text', placeholder: 'Cari item di inventory…', value: invFilter });
+    const search = h('input', { class: 'search', type: 'text', placeholder: t('inv_search'), value: invFilter });
     const listEl = h('div', { class: 'list' });
     const addBtn = h('button', { class: 'btn accent', onclick: async () => {
       const opts = sec.items.filter((i) => i.name !== 'Blank' && i.id !== 1792).map((i) => ({ id: i.id, name: i.name, sub: S.inventory[i.id] > 0 ? '×' + S.inventory[i.id] : '#' + i.id }));
-      if (!opts.length) { toast('Section ini kosong'); return; }
-      const id = await pick('Tambah ' + sec.name, opts);
+      if (!opts.length) { toast(t('section_empty')); return; }
+      const id = await pick(t('add_section_title', { s: sec.name }), opts);
       if (id === undefined) return;
-      if (S.inventory[id] > 0) { toast('Sudah ada di inventory (×' + S.inventory[id] + ')'); return; }
-      S.inventory[id] = 1; markDirty(); invFilter = ''; renderList(); toast('Ditambahkan: ' + itemName(id));
-    } }, '+ Tambah ' + sec.name);
+      if (S.inventory[id] > 0) { toast(t('already_in_inv', { n: S.inventory[id] })); return; }
+      S.inventory[id] = 1; markDirty(); invFilter = ''; renderList(); toast(t('added', { name: itemName(id) }));
+    } }, t('add_section', { s: sec.name }));
     wrap.append(h('div', { class: 'toolbar' }, search), h('div', { class: 'toolbar' }, addBtn));
     wrap.append(listEl);
 
@@ -293,9 +310,9 @@
           h('div', { class: 'name' }, h('b', null, nm), h('small', null, '#' + id)),
           h('div', { class: 'stepper' },
             h('button', { onclick: () => setVal(S.inventory[id] - 1) }, '−'), inp, h('button', { onclick: () => setVal(S.inventory[id] + 1) }, '+')),
-          h('button', { class: 'iconbtn', 'aria-label': 'Hapus', style: 'min-width:40px;height:40px;padding:0', onclick: () => { S.inventory[id] = 0; markDirty(); renderList(); } }, '🗑')));
+          h('button', { class: 'iconbtn', 'aria-label': t('delete'), style: 'min-width:40px;height:40px;padding:0', onclick: () => { S.inventory[id] = 0; markDirty(); renderList(); } }, '🗑')));
       }
-      if (!n) listEl.append(h('p', { class: 'empty' }, q ? 'Tidak ada hasil' : 'Inventory kosong. Tambahkan item di atas.'));
+      if (!n) listEl.append(h('p', { class: 'empty' }, q ? t('no_results') : t('inv_empty')));
     }
     search.addEventListener('input', () => { invFilter = search.value; renderList(); });
     renderList();
@@ -305,53 +322,53 @@
   function socialTab() {
     const wrap = h('div');
     const add = h('button', { class: 'btn accent', onclick: async () => {
-      if (S.socialLinks.length >= 23) { toast('Maksimal 23 social link', true); return; }
+      if (S.socialLinks.length >= 23) { toast(t('max_links'), true); return; }
       const opts = CAT.socialLinkIDs.filter((x) => x.id !== 0 && !S.socialLinks.some((l) => l.id === x.id)).map((x) => ({ id: x.id, name: x.name, sub: x.arcana }));
-      if (!opts.length) { toast('Semua link sudah ditambahkan'); return; }
-      const id = await pick('Tambah Social Link', opts);
+      if (!opts.length) { toast(t('all_links_added')); return; }
+      const id = await pick(t('add_link_title'), opts);
       if (id === undefined) return;
       S.socialLinks.push({ id, level: 1, progress: 0, flag: 0 }); markDirty(); render();
-    } }, '+ Tambah Social Link');
+    } }, t('add_link'));
     wrap.append(h('div', { class: 'toolbar' }, add));
-    if (!S.socialLinks.length) wrap.append(h('p', { class: 'empty' }, 'Belum ada social link.'));
+    if (!S.socialLinks.length) wrap.append(h('p', { class: 'empty' }, t('no_links')));
     S.socialLinks.forEach((l, idx) => {
       const info = CAT.socialLinkIDs.find((x) => x.id === l.id);
       wrap.append(h('div', { class: 'card' },
         h('div', { class: 'item', style: 'border:0;padding:0;margin-bottom:6px' },
           h('div', { class: 'name' }, h('b', null, info ? info.name : 'Unknown (' + l.id + ')'), h('small', null, info ? info.arcana : '#' + l.id)),
-          h('button', { class: 'btn small danger', onclick: () => { S.socialLinks.splice(idx, 1); markDirty(); render(); } }, 'Hapus')),
-        row('Level', numField(() => l.level, (v) => { l.level = v; }, 0, 255)),
-        row('Progress', numField(() => l.progress, (v) => { l.progress = v; }, 0, 255))));
+          h('button', { class: 'btn small danger', onclick: () => { S.socialLinks.splice(idx, 1); markDirty(); render(); } }, t('delete'))),
+        row(t('level'), numField(() => l.level, (v) => { l.level = v; }, 0, 255)),
+        row(t('progress'), numField(() => l.progress, (v) => { l.progress = v; }, 0, 255))));
     });
     return wrap;
   }
 
   function compendiumTab() {
     const wrap = h('div');
-    const search = h('input', { class: 'search', type: 'text', placeholder: 'Cari persona…', value: compFilter });
+    const search = h('input', { class: 'search', type: 'text', placeholder: t('comp_search'), value: compFilter });
     const listEl = h('div', { class: 'list' });
     const openEditor = (pe) => {
       const handle = openSheet(personaName(pe.id) + '  (#' + pe.id + ')', h('div', null,
         personaEditor(pe, { idPicker: false }),
         h('div', { style: 'margin-top:12px' }, h('button', { class: 'btn danger', style: 'width:100%', onclick: () => {
           S.compendium.splice(S.compendium.indexOf(pe), 1); markDirty(); handle.close(); renderList();
-        } }, 'Hapus dari compendium'))), { full: true, onClose: renderList });
+        } }, t('comp_remove')))), { full: true, onClose: renderList });
     };
     const add = h('button', { class: 'btn accent', onclick: async () => {
-      const opts = CAT.personae.filter((x) => x.id !== 0).map((x) => ({ id: x.id, name: x.name, sub: S.compendium.some((c) => c.id === x.id) ? '✓ terdaftar' : '#' + x.id }));
-      const id = await pick('Tambah ke Compendium', opts);
+      const opts = CAT.personae.filter((x) => x.id !== 0).map((x) => ({ id: x.id, name: x.name, sub: S.compendium.some((c) => c.id === x.id) ? t('registered') : '#' + x.id }));
+      const id = await pick(t('comp_add_title'), opts);
       if (id === undefined) return;
       let pe = S.compendium.find((c) => c.id === id);
       if (!pe) {
-        if (id > P4G.COMPENDIUM_COUNT) { toast('ID persona tidak bisa disimpan di compendium', true); return; }
+        if (id > P4G.COMPENDIUM_COUNT) { toast(t('comp_bad_id'), true); return; }
         pe = P4G.newPersona(id); S.compendium.push(pe); S.compendium.sort((a, b) => a.id - b.id); markDirty();
       }
       renderList(); openEditor(pe);
-    } }, '+ Tambah');
+    } }, t('add'));
     const clear = h('button', { class: 'btn danger', onclick: async () => {
       if (!S.compendium.length) return;
-      if (await confirmDialog('Hapus semua ' + S.compendium.length + ' persona dari compendium?', 'Hapus semua', true)) { S.compendium = []; markDirty(); renderList(); }
-    } }, 'Hapus semua');
+      if (await confirmDialog(t('comp_delete_all_q', { n: S.compendium.length }), t('delete_all'), true)) { S.compendium = []; markDirty(); renderList(); }
+    } }, t('delete_all'));
     wrap.append(h('div', { class: 'toolbar' }, search), h('div', { class: 'toolbar' }, add, clear), listEl);
     function renderList() {
       listEl.replaceChildren();
@@ -365,7 +382,7 @@
           h('div', { class: 'name' }, h('b', null, nm), h('small', null, '#' + pe.id + ' · Lv ' + pe.level + (pe.level > 99 ? ' ⚠' : ''))),
           h('span', { class: 'hint' }, '›')));
       }
-      if (!n) listEl.append(h('p', { class: 'empty' }, q ? 'Tidak ada hasil' : 'Compendium kosong.'));
+      if (!n) listEl.append(h('p', { class: 'empty' }, q ? t('no_results') : t('comp_empty')));
     }
     search.addEventListener('input', () => { compFilter = search.value; renderList(); });
     renderList();
@@ -380,12 +397,12 @@
       return i;
     };
     return h('div', null,
-      card('Tanggal', row('Day', numField(() => S.day, (v) => { S.day = v; }, 0, 255)),
-        row('Phase', selectField(phases, () => S.dayPhase, (v) => { S.dayPhase = v; }, 'Phase')),
-        row('Next Day', numField(() => S.nextDay, (v) => { S.nextDay = v; }, 0, 255)),
-        row('Next Phase', selectField(phases, () => S.nextDayPhase, (v) => { S.nextDayPhase = v; }, 'Next Phase'))),
-      card('Nama Protagonist', row('First name', nameInput('firstname')), row('Surname', nameInput('surname')),
-        h('p', { class: 'hint' }, 'Maksimal 9 karakter. Huruf, angka, dan simbol umum didukung.')));
+      card(t('date'), row(t('day'), numField(() => S.day, (v) => { S.day = v; }, 0, 255)),
+        row(t('phase'), selectField(phases, () => S.dayPhase, (v) => { S.dayPhase = v; }, t('phase'))),
+        row(t('next_day'), numField(() => S.nextDay, (v) => { S.nextDay = v; }, 0, 255)),
+        row(t('next_phase'), selectField(phases, () => S.nextDayPhase, (v) => { S.nextDayPhase = v; }, t('next_phase')))),
+      card(t('hero_name'), row(t('first_name'), nameInput('firstname')), row(t('surname'), nameInput('surname')),
+        h('p', { class: 'hint' }, t('name_hint'))));
   }
 
   // ----------------------------------------------------------- shell / chrome
@@ -396,12 +413,12 @@
     comp: '<svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg>',
     other: '<svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>',
   };
-  const TABS = [['stats', 'Stats', statsTab], ['inv', 'Inventory', inventoryTab], ['social', 'Social', socialTab], ['comp', 'Compendium', compendiumTab], ['other', 'Lainnya', otherTab]];
+  const TABS = [['stats', 'tab_stats', statsTab], ['inv', 'tab_inv', inventoryTab], ['social', 'tab_social', socialTab], ['comp', 'tab_comp', compendiumTab], ['other', 'tab_other', otherTab]];
   let mainEl, titleSub, saveBtn, navEl;
 
   function updateTopbar() {
     if (!titleSub) return;
-    titleSub.textContent = S ? (fileName || 'save') + (slotBytes ? ' + binslot' : '') + (dirty ? ' — belum disimpan' : '') : 'Belum ada file dibuka';
+    titleSub.textContent = S ? (fileName || 'save') + (slotBytes ? ' + binslot' : '') + (dirty ? t('unsaved') : '') : t('no_file');
     titleSub.classList.toggle('dirty', !!(S && dirty));
     saveBtn.disabled = !S;
   }
@@ -409,11 +426,11 @@
   function build() {
     root.replaceChildren();
     titleSub = h('span');
-    saveBtn = h('button', { class: 'iconbtn primary', onclick: doSave }, 'Simpan');
+    saveBtn = h('button', { class: 'iconbtn primary', onclick: doSave }, t('save'));
     const top = h('div', { class: 'topbar' },
       h('div', { class: 'brand' }, h('b', null, 'P4G Save Tool'), titleSub),
-      h('button', { class: 'iconbtn', onclick: doOpen }, 'Buka'), saveBtn,
-      h('button', { class: 'iconbtn', 'aria-label': 'Menu', onclick: (e) => { e.stopPropagation(); toggleMenu(); } }, '⋮'));
+      h('button', { class: 'iconbtn', onclick: doOpen }, t('open')), saveBtn,
+      h('button', { class: 'iconbtn', 'aria-label': t('menu'), onclick: (e) => { e.stopPropagation(); toggleMenu(); } }, '⋮'));
     mainEl = h('main');
     navEl = h('nav');
     root.append(top, mainEl, navEl);
@@ -425,8 +442,9 @@
   function toggleMenu() {
     if (menuEl) { menuEl.remove(); menuEl = null; return; }
     menuEl = h('div', { class: 'menu' },
-      h('button', { onclick: () => { toggleMenu(); doSaveAs(); } }, 'Simpan sebagai…'),
-      h('button', { onclick: () => { toggleMenu(); showAbout(); } }, 'Tentang'));
+      h('button', { onclick: () => { toggleMenu(); doSaveAs(); } }, t('save_as')),
+      h('button', { onclick: () => { toggleMenu(); showLanguage(); } }, t('language')),
+      h('button', { onclick: () => { toggleMenu(); showAbout(); } }, t('about')));
     document.body.append(menuEl);
   }
   document.addEventListener('click', () => { if (menuEl) { menuEl.remove(); menuEl = null; } });
@@ -438,24 +456,26 @@
     if (!S) {
       mainEl.append(h('div', { class: 'welcome' },
         h('div', { class: 'logo' }, 'P4G'),
-        h('h1', null, 'Persona 4 Golden Save Tool'),
-        h('p', null, 'Edit file save P4G (.bin) langsung dari ponsel: stats, persona, inventory, social link, compendium, dan lainnya.'),
-        h('button', { class: 'btn accent', onclick: doOpen }, 'Buka file save'),
-        h('p', { class: 'hint' }, 'Save Switch: pilih data0001.bin dan data0001.binslot sekaligus agar checksum ikut diperbarui.'),
-        h('p', { class: 'hint' }, 'Selalu simpan salinan cadangan file save aslimu sebelum mengedit.')));
+        h('h1', null, t('welcome_title')),
+        h('p', null, t('welcome_text')),
+        h('button', { class: 'btn accent', onclick: doOpen }, t('open_save')),
+        h('p', { class: 'hint' }, t('switch_hint')),
+        h('p', { class: 'hint' }, t('backup_hint'))));
       return;
     }
-    TABS.forEach(([key, label, fn]) => navEl.append(h('button', { class: key === tab ? 'on' : '', onclick: () => { tab = key; render(); mainEl.scrollTop = 0; }, html: ICONS[key] + '<span>' + label + '</span>' })));
-    const t = TABS.find((x) => x[0] === tab);
-    mainEl.append(t[2]());
+    TABS.forEach(([key, label, fn]) => navEl.append(h('button', { class: key === tab ? 'on' : '', onclick: () => { tab = key; render(); mainEl.scrollTop = 0; }, html: ICONS[key] + '<span>' + t(label) + '</span>' })));
+    const current = TABS.find((x) => x[0] === tab);
+    mainEl.append(current[2]());
     mainEl.scrollTop = scroll;
   }
 
   function showAbout() {
-    openSheet('Tentang', h('div', null,
-      h('p', null, 'P4G Save Tool untuk Android. Port dari P4G Save Tool (WPF) oleh Jack P. Fenech (Fennec-kun), lisensi MIT.'),
-      h('p', null, 'Aslinya ditulis oleh Fennec-kun dengan bantuan TGE, Shrinefox, dan Pan dari Amicitia. Dimungkinkan oleh HENkaku.'),
-      h('p', { class: 'hint' }, 'Repo asli: github.com/Fennec-kun/P4G-Save-Tool')));
+    openSheet(t('about'), h('div', null, h('p', null, t('about_1')), h('p', null, t('about_2')), h('p', { class: 'hint' }, t('about_3'))));
+  }
+  function showLanguage() {
+    const handle = openSheet(t('language'), h('div', null, Object.keys(STR).map((code) =>
+      h('button', { class: 'opt' + (code === lang ? ' on' : ''), onclick: () => { handle.close(); setLang(code); } },
+        h('span', null, STR[code].lang_name), h('small', null, code === lang ? '✓' : '')))));
   }
 
   // --------------------------------------------------------------- file I/O
@@ -465,26 +485,26 @@
   function loadBytes(name, bytes, slot) {
     try {
       const parsed = P4G.parse(bytes);
-      if (slot && !P4G.isBinslot(slot.bytes)) throw new Error('File ' + slot.name + ' bukan .binslot P4G.');
+      if (slot && !P4G.isBinslot(slot.bytes)) throw new Error(t('not_binslot_named', { name: slot.name }));
       S = parsed; orig = bytes; fileName = name; dirty = false;
       slotBytes = slot ? slot.bytes : null; slotName = slot ? slot.name : '';
       memberIdx = 0; slotIdx = 0; invFilter = ''; compFilter = ''; tab = 'stats';
       build();
-      toast('Dibuka: ' + name + (slot ? ' + ' + slot.name : ''));
-      if (!slot) setTimeout(() => toast('Save Switch? Pilih juga file .binslot saat membuka.'), 2400);
+      toast(t('opened', { name: name + (slot ? ' + ' + slot.name : '') }));
+      if (!slot) setTimeout(() => toast(t('switch_pick_slot')), 2400);
     } catch (e) {
-      toast(e.message || String(e), true);
+      toast(e.code ? t('err_' + e.code, e.args) : (e.message || String(e)), true);
     }
   }
   /** files: [{name, bytes}] - one .bin plus an optional .binslot, in any order. */
   function loadFiles(files) {
     const slot = files.find((f) => /\.binslot$/i.test(f.name));
     const bin = files.find((f) => f !== slot);
-    if (!bin) { toast('Pilih file save .bin (dan .binslot untuk Switch).', true); return; }
+    if (!bin) { toast(t('pick_bin'), true); return; }
     loadBytes(bin.name, bin.bytes, slot);
   }
   async function doOpen() {
-    if (dirty && !(await confirmDialog('Ada perubahan yang belum disimpan. Buka file lain dan buang perubahan?', 'Buka', true))) return;
+    if (dirty && !(await confirmDialog(t('discard_open'), t('open'), true))) return;
     if (bridge) bridge.openFile();
     else {
       const inp = h('input', { type: 'file', multiple: true });
@@ -505,8 +525,8 @@
   async function doSave() {
     if (!S) return;
     if (!bridge) return doSaveAs();
-    const names = fileName + (slotBytes ? ' dan ' + slotName : '');
-    if (!(await confirmDialog('Timpa ' + names + ' dengan perubahan ini? Cadangan otomatis disimpan di folder aplikasi.', 'Simpan'))) return;
+    const names = fileName + (slotBytes ? ' ' + t('and') + ' ' + slotName : '');
+    if (!(await confirmDialog(t('overwrite_q', { names }), t('save')))) return;
     const out = currentBytes(), slot = currentSlot(out);
     pendingBytes = out; pendingSlot = slot;
     bridge.saveFile(toB64(out), slot ? toB64(slot) : '');
@@ -518,20 +538,20 @@
     else {
       download(fileName || 'save.bin', out);
       if (slot) setTimeout(() => download(slotName, slot), 400);
-      orig = out; if (slot) slotBytes = slot; dirty = false; updateTopbar(); toast('File diunduh');
+      orig = out; if (slot) slotBytes = slot; dirty = false; updateTopbar(); toast(t('downloaded'));
     }
   }
   let pendingBytes = null, pendingSlot = null;
 
   // callbacks invoked by the Android host
   window.__onFilesOpened = (arr) => loadFiles(arr.map((f) => ({ name: f.name, bytes: fromB64(f.b64) })));
-  window.__onSaved = (name) => { if (pendingBytes) { orig = pendingBytes; pendingBytes = null; } if (pendingSlot) { slotBytes = pendingSlot; pendingSlot = null; } if (name) fileName = name; dirty = false; updateTopbar(); toast('Tersimpan: ' + fileName); };
-  window.__onError = (msg) => { pendingBytes = null; pendingSlot = null; toast(msg, true); };
+  window.__onSaved = (name) => { if (pendingBytes) { orig = pendingBytes; pendingBytes = null; } if (pendingSlot) { slotBytes = pendingSlot; pendingSlot = null; } if (name) fileName = name; dirty = false; updateTopbar(); toast(t('saved', { name: fileName })); };
+  window.__onError = (code, detail) => { pendingBytes = null; pendingSlot = null; toast(STR.en['err_' + code] ? t('err_' + code, { detail }) : code, true); };
   window.__back = () => {
     if (menuEl) { toggleMenu(); return 'handled'; }
     if (modals.length) { modals[modals.length - 1].close(); return 'handled'; }
     if (dirty) {
-      confirmDialog('Ada perubahan yang belum disimpan. Keluar dari aplikasi?', 'Keluar', true).then((ok) => { if (ok && bridge) bridge.exitApp(); });
+      confirmDialog(t('exit_q'), t('exit'), true).then((ok) => { if (ok && bridge) bridge.exitApp(); });
       return 'handled';
     }
     return 'exit';

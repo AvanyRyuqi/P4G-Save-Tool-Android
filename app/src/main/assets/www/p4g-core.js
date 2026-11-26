@@ -39,6 +39,9 @@
   const COMPENDIUM_ZERO = 11937;
   const MIN_FILE_SIZE = OFF.compendium + 48 * (COMPENDIUM_COUNT - 1) + PERSONA_SIZE; // 21625
 
+  // Errors carry a code (+args) so the UI can show them in the selected language.
+  function coded(code, message, args) { const e = new Error(message); e.code = code; e.args = args; return e; }
+
   // ------------------------------------------------------------- byte utils
   const view = (b) => new DataView(b.buffer, b.byteOffset, b.byteLength);
   const u16 = (b, p) => view(b).getUint16(p, true);
@@ -116,7 +119,7 @@
   function parse(bytes) {
     if (!(bytes instanceof Uint8Array)) bytes = new Uint8Array(bytes);
     if (bytes.length < MIN_FILE_SIZE) {
-      throw new Error('File terlalu kecil (' + bytes.length + ' byte) untuk save P4G. Minimal ' + MIN_FILE_SIZE + ' byte.');
+      throw coded('too_small', 'File is too small (' + bytes.length + ' bytes) for a P4G save. Minimum is ' + MIN_FILE_SIZE + ' bytes.', { size: bytes.length, min: MIN_FILE_SIZE });
     }
     const s = {};
     s.surname = readPString(bytes, OFF.pSurname);
@@ -279,7 +282,7 @@
   }
   /** Returns a copy of the .binslot with the MD5 and the "Lv:N" title text matching the given .bin. */
   function patchBinslot(slot, bin) {
-    if (!isBinslot(slot)) throw new Error('Bukan file .binslot P4G (magic SAVE0001 tidak ditemukan).');
+    if (!isBinslot(slot)) throw coded('not_binslot', 'Not a P4G .binslot file (SAVE0001 magic not found).');
     const out = new Uint8Array(slot);
     out.set(md5(bin), SLOT_MD5);
     let end = out.indexOf(0, SLOT_TITLE); if (end < 0) end = out.length;

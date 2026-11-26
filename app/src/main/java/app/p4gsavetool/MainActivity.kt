@@ -75,7 +75,7 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             pendingSlot = null
-            reportError("Gagal menyimpan: ${e.message}")
+            reportError("save_fail", e.message)
         }
     }
 
@@ -85,7 +85,7 @@ class MainActivity : AppCompatActivity() {
         val data = pendingSlot
         pendingSlot = null
         if (uri == null || data == null) {
-            reportError("File .binslot tidak disimpan. Save Switch butuh keduanya.")
+            reportError("slot_not_saved")
             return@registerForActivityResult
         }
         try {
@@ -95,7 +95,7 @@ class MainActivity : AppCompatActivity() {
             slotOriginal = data
             callJs("window.__onSaved(${JSONObject.quote(binName)})")
         } catch (e: Exception) {
-            reportError("Gagal menyimpan .binslot: ${e.message}")
+            reportError("slot_save_fail", e.message)
         }
     }
 
@@ -163,7 +163,7 @@ class MainActivity : AppCompatActivity() {
                 if (slot != null && sUri != null) writeBytes(sUri, slot)
                 callJs("window.__onSaved(${JSONObject.quote(binName)})")
             } catch (e: Exception) {
-                reportError("Gagal menyimpan: ${e.message}")
+                reportError("save_fail", e.message)
             }
         }
 
@@ -174,7 +174,7 @@ class MainActivity : AppCompatActivity() {
                 pendingSlot = if (slotBase64.isNotEmpty()) Base64.decode(slotBase64, Base64.DEFAULT) else null
                 pendingSlotName = slotSuggestedName
             } catch (e: Exception) {
-                reportError("Data tidak valid: ${e.message}")
+                reportError("invalid_data", e.message)
                 return
             }
             runOnUiThread { createBinLauncher.launch(suggestedName) }
@@ -201,7 +201,7 @@ class MainActivity : AppCompatActivity() {
                     // provider does not support persistable grants; the grant lasts for this session
                 }
                 val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: throw IllegalStateException("tidak bisa membaca file")
+                    ?: throw IllegalStateException("cannot read file")
                 val name = displayName(uri) ?: "save.bin"
                 if (name.endsWith(".binslot", ignoreCase = true)) {
                     slot = Pair(uri, bytes); slotName = name
@@ -214,20 +214,20 @@ class MainActivity : AppCompatActivity() {
                         .put("b64", Base64.encodeToString(bytes, Base64.NO_WRAP))
                 )
             }
-            if (bin == null) throw IllegalStateException("pilih file save .bin")
+            if (bin == null) throw IllegalStateException("no .bin file selected")
             binUri = bin.first; binOriginal = bin.second
             slotUri = slot?.first; slotOriginal = slot?.second
             if (slot == null) slotName = ""
             backedUp = false
             callJs("window.__onFilesOpened($files)")
         } catch (e: Exception) {
-            reportError("Gagal membuka file: ${e.message}")
+            reportError("open_fail", e.message)
         }
     }
 
     private fun writeBytes(uri: Uri, data: ByteArray) {
         val out = contentResolver.openOutputStream(uri, "wt")
-            ?: throw IllegalStateException("tidak bisa menulis file")
+            ?: throw IllegalStateException("cannot write file")
         out.use { it.write(data); it.flush() }
     }
 
@@ -250,7 +250,8 @@ class MainActivity : AppCompatActivity() {
         runOnUiThread { web.evaluateJavascript(script, null) }
     }
 
-    private fun reportError(message: String) {
-        callJs("window.__onError(${JSONObject.quote(message)})")
+    /** The page translates [code] (see i18n.js, keys err_*); [detail] is appended where the text has {detail}. */
+    private fun reportError(code: String, detail: String? = null) {
+        callJs("window.__onError(${JSONObject.quote(code)}, ${JSONObject.quote(detail ?: "")})")
     }
 }

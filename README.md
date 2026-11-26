@@ -13,7 +13,7 @@ Edit file save **Persona 4 Golden** (`.bin`, hasil dump dari PS Vita) langsung d
 | Compendium | Tambah/hapus persona, edit level/stat/XP/skill |
 | Lainnya | Day, Phase, Next Day, Next Phase, nama protagonist |
 
-Tambahan di versi Android: buka/simpan lewat file picker sistem, **cadangan otomatis** file asli sebelum ditimpa
+Tambahan di versi Android: **pilihan bahasa Indonesia / English** (menu ⋮ ▸ Bahasa / Language, tersimpan di perangkat), pencarian di semua daftar pilihan, buka/simpan lewat file picker sistem, **cadangan otomatis** file asli sebelum ditimpa
 (`Android/data/app.p4gsavetool/files/backups/`), dan konfirmasi saat keluar bila ada perubahan belum disimpan.
 
 ## Save Nintendo Switch
@@ -35,6 +35,7 @@ app/src/main/
     p4g-core.js   <- port logika baca/tulis save (offset persis dari MainWindow.xaml.cs)
     db.js         <- database nama item/skill/persona (diekstrak dari Database di C#)
     app.js, style.css, index.html  <- UI mobile
+    i18n.js       <- teks UI Indonesia & English (tambah bahasa baru di sini)
   java/app/p4gsavetool/MainActivity.kt  <- WebView + file picker (SAF) + backup
 tests/core.test.js <- tes logika dengan Node (tanpa Android)
 tools/fix_binslot.py <- perbaiki .binslot Switch dari command line

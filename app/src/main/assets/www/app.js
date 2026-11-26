@@ -82,30 +82,44 @@
     });
   }
 
-  /** Full-screen searchable list. Resolves with the chosen id, or undefined. */
+  /** Full-screen searchable list. Resolves with the chosen id, or undefined.
+   *  Search: every word must match the name (any order) or the id, e.g. "agi lv", "mara", "#134". */
   function pick(title, options, currentId) {
     return new Promise((resolve) => {
-      let chosen;
+      const PAGE = 100;
+      let chosen, limit = PAGE, handle;
       const list = h('div');
-      const search = h('input', { type: 'text', placeholder: 'Cari…', autocomplete: 'off', style: 'margin-bottom:8px' });
-      const body = h('div', null, search, list);
-      let handle;
-      const render = () => {
-        const q = search.value.trim().toLowerCase();
-        list.replaceChildren();
-        let shown = 0;
-        for (const o of options) {
-          if (q && !(o.name.toLowerCase().includes(q) || String(o.id) === q)) continue;
-          if (++shown > 400) { list.append(h('p', { class: 'hint' }, 'Hasil dibatasi 400. Persempit pencarian.')); break; }
-          list.append(h('button', { class: 'opt' + (o.id === currentId ? ' on' : ''), onclick: () => { chosen = o.id; handle.close(); } },
-            h('span', null, o.name), h('small', null, o.sub != null ? o.sub : '#' + o.id)));
-        }
-        if (!shown) list.append(h('p', { class: 'empty' }, 'Tidak ada hasil'));
+      const count = h('small', { class: 'hint', style: 'display:block;margin:2px 2px 0' });
+      const search = h('input', { type: 'text', placeholder: 'Cari nama atau ID…', autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false', enterkeyhint: 'search' });
+      const clear = h('button', { class: 'clearbtn', type: 'button', 'aria-label': 'Hapus pencarian', hidden: true, onclick: () => { search.value = ''; limit = PAGE; render(); search.focus(); } }, '✕');
+      const bar = h('div', { class: 'searchbar' }, h('div', { class: 'searchwrap' }, search, clear), count);
+      const lower = options.map((o) => o.name.toLowerCase());
+      const matches = () => {
+        const tokens = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        if (!tokens.length) return options;
+        const hit = [];
+        options.forEach((o, i) => {
+          const n = lower[i], id = String(o.id);
+          if (tokens.every((t) => n.includes(t) || id === t.replace(/^#/, '') || (/^#?\d+$/.test(t) && id.startsWith(t.replace(/^#/, ''))))) hit.push([n.startsWith(tokens[0]) ? 0 : 1, i]);
+        });
+        return hit.sort((x, y) => x[0] - y[0] || x[1] - y[1]).map((x) => options[x[1]]); // prefix matches first
       };
-      search.addEventListener('input', render);
-      handle = openSheet(title, body, { full: true, onClose: () => resolve(chosen) });
+      const render = () => {
+        const res = matches();
+        clear.hidden = !search.value;
+        count.textContent = search.value.trim() ? res.length + ' hasil' : options.length + ' pilihan';
+        list.replaceChildren();
+        res.slice(0, limit).forEach((o) => list.append(h('button', { class: 'opt' + (o.id === currentId ? ' on' : ''), onclick: () => { chosen = o.id; handle.close(); } },
+          h('span', null, o.name), h('small', null, o.sub != null ? o.sub : '#' + o.id))));
+        if (res.length > limit) list.append(h('button', { class: 'btn', style: 'width:100%;margin-top:8px', onclick: () => { limit += PAGE; render(); } }, 'Tampilkan lebih banyak (' + (res.length - limit) + ')'));
+        if (!res.length) list.append(h('p', { class: 'empty' }, 'Tidak ada hasil untuk "' + search.value.trim() + '"'));
+      };
+      search.addEventListener('input', () => { limit = PAGE; render(); });
+      handle = openSheet(title, h('div', null, bar, list), { full: true, onClose: () => resolve(chosen) });
       render();
-      const cur = list.querySelector('.opt.on'); if (cur) cur.scrollIntoView({ block: 'center' });
+      const cur = list.querySelector('.opt.on');
+      if (cur) cur.scrollIntoView({ block: 'center' });
+      if (options.length > 12) setTimeout(() => search.focus(), 50); // open the keyboard right away for long lists
     });
   }
   const withUnknown = (list, id, prefix) => list.some((x) => x.id === id) ? list : list.concat([{ id, name: (id === 0 ? 'Blank' : (prefix || 'Unknown')) + ' (' + id + ')' }]);

@@ -16,6 +16,32 @@ Edit file save **Persona 4 Golden** (`.bin`, hasil dump dari PS Vita) langsung d
 Tambahan di versi Android: **pilihan bahasa Indonesia / English** (menu ⋮ ▸ Bahasa / Language, tersimpan di perangkat), pencarian di semua daftar pilihan, buka/simpan lewat file picker sistem, **cadangan otomatis** file asli sebelum ditimpa
 (`Android/data/app.p4gsavetool/files/backups/`), dan konfirmasi saat keluar bila ada perubahan belum disimpan.
 
+## Baca folder save langsung
+
+Di layar awal tekan **Buka folder save**. Aplikasi mencari `data*.bin` (beserta `.binslot`) di folder
+`/storage/emulated/0/persona 4 golden/user/save` (sampai 6 tingkat subfolder, huruf besar/kecil tidak dipermasalahkan) dan
+menampilkan daftar slot dengan nama karakter, level, tanggal game, ukuran, dan waktu ubah. Ketuk slot untuk membukanya;
+**Simpan** menulis langsung ke file itu.
+
+* Pertama kali, Android meminta izin **Akses semua file** (layar pengaturan terbuka otomatis; aktifkan lalu kembali ke aplikasi).
+* Lokasi folder bisa diubah lewat **Ubah folder** dan diingat. Kalau folder tidak ketemu, kamu bisa mengetik path lain
+  atau memakai **Pilih file manual**.
+* Cadangan file asli dibuat otomatis sebelum menimpa (`Android/data/app.p4gsavetool/files/backups/`).
+
+## Update tanpa hapus aplikasi
+
+Setiap push ke `main` menjalankan GitHub Actions yang membuat APK dan menerbitkannya di **Releases**
+(`P4G-Save-Tool.apk`). Dari ponsel: buka halaman Releases repo ini, unduh APK terbaru, lalu pasang. Android memperlakukannya
+sebagai **update** (data dan pengaturan bahasa tetap) karena:
+
+* APK selalu ditandatangani dengan kunci tetap `app/p4g-sideload.keystore`, dan
+* `versionCode` naik otomatis (100 + nomor run Actions).
+
+Catatan keamanan: kunci tersebut publik (ada di repo) dan hanya untuk pemakaian pribadi. Untuk dipublikasikan di Play Store,
+buat keystore privat sendiri dan simpan sebagai GitHub Secret.
+APK yang dibuat *sebelum* kunci tetap ini ada memakai kunci acak, jadi pemasangan pertama dengan kunci tetap
+masih perlu menghapus versi lama satu kali.
+
 ## Save Nintendo Switch
 
 Save Switch terdiri dari `data0001.bin` **dan** `data0001.binslot`. Di `.binslot` (offset 24) tersimpan MD5 dari `.bin`;

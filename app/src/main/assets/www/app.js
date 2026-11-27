@@ -443,6 +443,7 @@
     if (menuEl) { menuEl.remove(); menuEl = null; return; }
     menuEl = h('div', { class: 'menu' },
       h('button', { onclick: () => { toggleMenu(); doSaveAs(); } }, t('save_as')),
+      hasFolderAccess() ? h('button', { onclick: () => { toggleMenu(); openSaveFolder(); } }, t('open_folder')) : null,
       h('button', { onclick: () => { toggleMenu(); showLanguage(); } }, t('language')),
       h('button', { onclick: () => { toggleMenu(); showAbout(); } }, t('about')));
     document.body.append(menuEl);
@@ -458,7 +459,8 @@
         h('div', { class: 'logo' }, 'P4G'),
         h('h1', null, t('welcome_title')),
         h('p', null, t('welcome_text')),
-        h('button', { class: 'btn accent', onclick: doOpen }, t('open_save')),
+        hasFolderAccess() ? h('button', { class: 'btn accent', onclick: openSaveFolder }, t('open_folder')) : null,
+        h('button', { class: hasFolderAccess() ? 'btn' : 'btn accent', onclick: doOpen }, t('open_save')),
         h('p', { class: 'hint' }, t('switch_hint')),
         h('p', { class: 'hint' }, t('backup_hint'))));
       return;
@@ -503,6 +505,55 @@
     if (!bin) { toast(t('pick_bin'), true); return; }
     loadBytes(bin.name, bin.bytes, slot);
   }
+  // ------------------------------------------------------ save folder (Android)
+  const DEFAULT_DIR = '/storage/emulated/0/persona 4 golden/user/save';
+  const hasFolderAccess = () => !!(bridge && bridge.scanSaves);
+  const getDir = () => { try { return localStorage.getItem('p4g-savedir') || DEFAULT_DIR; } catch (e) { return DEFAULT_DIR; } };
+  const setDir = (v) => { try { localStorage.setItem('p4g-savedir', v); } catch (e) { /* ignore */ } };
+
+  async function openSaveFolder() {
+    if (!hasFolderAccess()) return doOpen();
+    if (dirty && !(await confirmDialog(t('discard_open'), t('open'), true))) return;
+    toast(t('scanning'));
+    bridge.scanSaves(getDir());
+  }
+
+  /** Message + editable path + retry / manual-pick buttons. */
+  function folderEditor(message, path) {
+    const input = h('input', { type: 'text', value: path, autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false' });
+    const handle = openSheet(t('folder_location'), h('div', null,
+      message ? h('p', { class: 'warn' }, message) : null,
+      h('div', { class: 'row' }, h('div', { class: 'grow' }, input)),
+      h('div', { class: 'toolbar' },
+        h('button', { class: 'btn accent', onclick: () => { const v = input.value.trim() || DEFAULT_DIR; setDir(v); handle.close(); toast(t('scanning')); bridge.scanSaves(v); } }, t('retry')),
+        h('button', { class: 'btn', onclick: () => { handle.close(); doOpen(); } }, t('pick_manually')))));
+    return handle;
+  }
+
+  function showSlots(r) {
+    const fmt = (ms) => { try { return new Date(ms).toLocaleString(lang === 'id' ? 'id-ID' : 'en-GB', { dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return ''; } };
+    const list = h('div', { class: 'list' });
+    let handle;
+    r.slots.forEach((sl) => {
+      const detail = [sl.info, Math.round(sl.size / 1024) + ' KB', fmt(sl.modified)].filter(Boolean).join(' · ');
+      list.append(h('div', { class: 'item tap', onclick: () => { handle.close(); bridge.openPath(sl.bin, sl.slot); } },
+        h('div', { class: 'name' }, h('b', null, (sl.dir ? sl.dir + '/' : '') + sl.name), h('small', null, detail)),
+        h('span', { class: 'hint' }, '›')));
+    });
+    handle = openSheet(t('pick_slot'), h('div', null,
+      h('p', { class: 'hint', style: 'margin:0 0 10px;word-break:break-all' }, t('slots_found', { n: r.slots.length, path: r.root })),
+      list,
+      h('div', { class: 'toolbar', style: 'margin-top:12px' },
+        h('button', { class: 'btn', onclick: () => { handle.close(); folderEditor('', r.path); } }, t('change_folder')))), { full: true });
+  }
+
+  window.__onScanResult = (r) => {
+    if (r.status === 'permission') {
+      confirmDialog(t('perm_q'), t('perm_go')).then((ok) => { if (ok) bridge.requestStorageAccess(); });
+    } else if (r.status === 'ok') showSlots(r);
+    else folderEditor(t(r.status === 'empty' ? 'folder_empty' : 'folder_not_found') + ' ' + r.path, r.path);
+  };
+
   async function doOpen() {
     if (dirty && !(await confirmDialog(t('discard_open'), t('open'), true))) return;
     if (bridge) bridge.openFile();

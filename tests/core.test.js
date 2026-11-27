@@ -148,5 +148,5 @@ test('i18n: both languages have identical keys/placeholders and app.js only uses
   ['tab_stats', 'tab_inv', 'tab_social', 'tab_comp', 'tab_other'].forEach((k) => used.add(k)); // used via TABS
   for (const k of used) assert.ok(k in en, 'missing i18n key: ' + k);
   // error codes thrown by the core / sent by Kotlin need an err_* text
-  for (const c of ['too_small', 'not_binslot', 'open_fail', 'save_fail', 'slot_save_fail', 'slot_not_saved', 'invalid_data']) assert.ok(('err_' + c) in en, c);
+  for (const c of ['too_small', 'not_binslot', 'open_fail', 'save_fail', 'slot_save_fail', 'slot_not_saved', 'invalid_data', 'perm_denied', 'scan_fail']) assert.ok(('err_' + c) in en, c);
 });

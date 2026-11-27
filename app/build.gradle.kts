@@ -11,13 +11,31 @@ android {
         applicationId = "app.p4gsavetool"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        // CI passes GITHUB_RUN_NUMBER so every build has a higher versionCode (required to update in place).
+        val run = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 0
+        versionCode = 100 + run
+        versionName = "1.1.$run"
+    }
+
+    // A FIXED key is what lets a new APK update the installed app without uninstalling it.
+    // This key is public (it lives in the repo) and meant for personal sideloading only.
+    // For distribution (e.g. Play Store) create a private keystore instead.
+    signingConfigs {
+        create("sideload") {
+            storeFile = file("p4g-sideload.keystore")
+            storePassword = "android"
+            keyAlias = "p4gsavetool"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("sideload")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("sideload")
         }
     }
     compileOptions {

@@ -47,6 +47,12 @@ window.P4G_I18N = {
     err_too_small: 'File terlalu kecil ({size} byte) untuk save P4G. Minimal {min} byte.', err_not_binslot: 'Bukan file .binslot P4G (magic SAVE0001 tidak ditemukan).',
     err_open_fail: 'Gagal membuka file: {detail}', err_save_fail: 'Gagal menyimpan: {detail}', err_slot_save_fail: 'Gagal menyimpan .binslot: {detail}',
     err_slot_not_saved: 'File .binslot tidak disimpan. Save Switch butuh keduanya.', err_invalid_data: 'Data tidak valid: {detail}',
+    // save folder
+    open_folder: 'Buka folder save', scanning: 'Mencari save…', pick_slot: 'Pilih slot save', change_folder: 'Ubah folder', folder_location: 'Lokasi folder save',
+    retry: 'Coba lagi', pick_manually: 'Pilih file manual', perm_go: 'Beri izin',
+    perm_q: 'Untuk membaca folder save langsung, aplikasi butuh izin "Akses semua file". Layar pengaturan akan terbuka: aktifkan izin untuk P4G Save Tool, lalu kembali ke aplikasi.',
+    folder_not_found: 'Folder tidak ditemukan:', folder_empty: 'Tidak ada file save (data0001.bin dst.) di folder:', slots_found: '{n} slot ditemukan di {path}',
+    err_perm_denied: 'Izin akses file ditolak. Tanpa izin ini folder save tidak bisa dibaca; gunakan "Buka file save" sebagai gantinya.', err_scan_fail: 'Gagal membaca folder: {detail}',
   },
   en: {
     lang_name: 'English',
@@ -84,5 +90,11 @@ window.P4G_I18N = {
     err_too_small: 'File is too small ({size} bytes) for a P4G save. Minimum is {min} bytes.', err_not_binslot: 'Not a P4G .binslot file (SAVE0001 magic not found).',
     err_open_fail: 'Could not open file: {detail}', err_save_fail: 'Could not save: {detail}', err_slot_save_fail: 'Could not save .binslot: {detail}',
     err_slot_not_saved: 'The .binslot was not saved. Switch saves need both files.', err_invalid_data: 'Invalid data: {detail}',
+    // save folder
+    open_folder: 'Open save folder', scanning: 'Searching for saves…', pick_slot: 'Choose a save slot', change_folder: 'Change folder', folder_location: 'Save folder location',
+    retry: 'Try again', pick_manually: 'Pick file manually', perm_go: 'Grant access',
+    perm_q: 'To read the save folder directly the app needs the "All files access" permission. A settings screen will open: enable it for P4G Save Tool, then come back to the app.',
+    folder_not_found: 'Folder not found:', folder_empty: 'No save files (data0001.bin etc.) in folder:', slots_found: '{n} slots found in {path}',
+    err_perm_denied: 'File access permission was denied. Without it the save folder cannot be read; use "Open save file" instead.', err_scan_fail: 'Could not read the folder: {detail}',
   },
 };

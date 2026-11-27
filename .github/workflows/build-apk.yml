@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write   # needed to publish the APK as a GitHub Release
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,10 +26,24 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      - name: Build debug APK
+      - name: Build APK (fixed signing key, versionCode = 100 + run number)
         run: ./gradlew --no-daemon assembleDebug
+
+      - name: Name the APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk P4G-Save-Tool.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: P4G-Save-Tool-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: P4G-Save-Tool-apk
+          path: P4G-Save-Tool.apk
+
+      # Download from the phone: repo > Releases > latest > P4G-Save-Tool.apk, then install over the old app.
+      - name: Publish release
+        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" P4G-Save-Tool.apk \
+            --title "P4G Save Tool build ${{ github.run_number }}" \
+            --notes "Commit ${GITHUB_SHA::7}. Install over the previous version (same signing key)." \
+            --latest

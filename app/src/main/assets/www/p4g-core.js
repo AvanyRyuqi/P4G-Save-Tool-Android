@@ -304,6 +304,16 @@
     return out;
   }
 
+  /** True when both checksums inside a .binslot match its .bin (what the Switch game checks on load). */
+  function verifySlot(slot, bin) {
+    if (!isBinslot(slot)) return false;
+    const same = (a, b) => { for (let i = 0; i < 16; i++) if (a[i] !== b[i]) return false; return true; };
+    if (!same(slot.subarray(SLOT_MD5, SLOT_MD5 + 16), md5(bin))) return false;
+    const tail = slot.subarray(0x28), buf = new Uint8Array(tail.length + 8);
+    buf.set(tail); for (let k = 0; k < 8; k++) buf[tail.length + k] = 'P4GOLDEN'.charCodeAt(k);
+    return same(slot.subarray(8, 24), md5(buf));
+  }
+
   // ---------------------------------------------------------------- catalog
   function buildCatalog(db) {
     const range = (arr, start, len) => {
@@ -419,7 +429,7 @@
   return {
     OFF, INVENTORY_SIZE, MIN_FILE_SIZE, COMPENDIUM_COUNT,
     parse, serialize, buildCatalog, md5, isBinslot, patchBinslot, newPersona, blankPersona,
-    pointsToLevel, levelToPoints, xpForLevel, validate,
+    pointsToLevel, levelToPoints, xpForLevel, validate, verifySlot,
     _internal: { readPString, writePString, writeJString, readPersona, writePersona },
   };
 });

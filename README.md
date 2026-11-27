@@ -123,3 +123,12 @@ Level (protagonist and every Persona) and ST/MA/DE/AG/LU now have a numeric box 
 - The top bar shows whether a Switch `.binslot` is paired.
 
 Not included: Steam/PC save support (format not verified).
+
+### Update: safety & search
+- **Draft autosave** – unsaved edits are kept and offered back on the start screen after the app was closed.
+- **Verified saves** – `.binslot` checksums are checked before writing, and the written files are read back and compared (an error is shown instead of a false "saved").
+- **Backup manager** – lock / delete backups; the newest 40 unlocked backups are kept automatically.
+- **Search save** (⋮) – items, Personas, skills held by Personas, social links; tap a result to jump to it.
+- **Compare with another save**, **Save summary**, **Share** (.bin/.binslot/Persona text) and **saved Persona builds**.
+
+Not included (needs data/samples I do not have): default skills per Persona, fusion helper, story-flag editor, Steam/PC saves.

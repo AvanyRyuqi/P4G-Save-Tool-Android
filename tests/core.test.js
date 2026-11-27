@@ -135,6 +135,11 @@ test('patchBinslot updates md5 and Lv text only', () => {
   const tail = Buffer.concat([Buffer.from(out.subarray(0x28)), Buffer.from('P4GOLDEN')]);
   assert.strictEqual(Buffer.from(out.subarray(8, 24)).toString('hex'), crypto.createHash('md5').update(tail).digest('hex'));
   assert.throws(() => P4G.patchBinslot(new Uint8Array(100), bin));
+  assert.ok(P4G.verifySlot(out, bin));
+  const bad = new Uint8Array(out); bad[30] ^= 1;
+  assert.ok(!P4G.verifySlot(bad, bin));
+  const bin2 = new Uint8Array(bin); bin2[5] ^= 1;
+  assert.ok(!P4G.verifySlot(out, bin2));
 });
 
 test('i18n: both languages have identical keys/placeholders and app.js only uses existing keys', () => {

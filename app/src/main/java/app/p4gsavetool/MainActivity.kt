@@ -270,6 +270,19 @@ class MainActivity : AppCompatActivity() {
                     writeBytes(bu, bin)
                     if (slot != null && su != null) writeBytes(su, slot)
                 }
+                // read everything back: a half-written or silently truncated file must never be reported as saved
+                val back = if (bf != null) bf.readBytes() else contentResolver.openInputStream(bu!!)?.use { it.readBytes() }
+                if (back == null || !back.contentEquals(bin)) {
+                    reportError("verify_fail")
+                    return
+                }
+                if (slot != null) {
+                    val sback = if (sf != null) sf.readBytes() else contentResolver.openInputStream(su!!)?.use { it.readBytes() }
+                    if (sback == null || !sback.contentEquals(slot)) {
+                        reportError("verify_fail")
+                        return
+                    }
+                }
                 callJs("window.__onSaved(${JSONObject.quote(binName)})")
             } catch (e: Exception) {
                 reportError("save_fail", e.message)
@@ -314,6 +327,64 @@ class MainActivity : AppCompatActivity() {
                 if (f.isFile) Base64.encodeToString(f.readBytes(), Base64.NO_WRAP) else ""
             } catch (ignored: Exception) {
                 ""
+            }
+        }
+
+        /** Deletes one backup file. Returns true when it is gone. */
+        @JavascriptInterface
+        fun deleteBackup(name: String): Boolean {
+            if (name.contains('/') || name.contains('\\') || name.contains("..")) return false
+            return try {
+                val f = File(backupDir(), name)
+                !f.exists() || f.delete()
+            } catch (ignored: Exception) {
+                false
+            }
+        }
+
+        /** Locks / unlocks a backup (locked ones end in ".keep.bak" and are never pruned). Returns the new name, or "" on failure. */
+        @JavascriptInterface
+        fun toggleBackupLock(name: String): String {
+            if (name.contains('/') || name.contains('\\') || name.contains("..") || !name.endsWith(".bak")) return ""
+            return try {
+                val f = File(backupDir(), name)
+                val newName = if (name.endsWith(".keep.bak")) name.removeSuffix(".keep.bak") + ".bak" else name.removeSuffix(".bak") + ".keep.bak"
+                if (f.isFile && f.renameTo(File(backupDir(), newName))) newName else ""
+            } catch (ignored: Exception) {
+                ""
+            }
+        }
+
+        /** Android share sheet with plain text (used for Persona exports). */
+        @JavascriptInterface
+        fun shareText(text: String) {
+            runOnUiThread {
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, text)
+                }
+                startActivity(Intent.createChooser(send, null))
+            }
+        }
+
+        /** Android share sheet for a file (base64 content); the copy lives in the app cache. */
+        @JavascriptInterface
+        fun shareFile(name: String, b64: String) {
+            try {
+                val dir = File(cacheDir, "share").apply { mkdirs() }
+                val f = File(dir, File(name).name)
+                f.writeBytes(Base64.decode(b64, Base64.DEFAULT))
+                val uri = androidx.core.content.FileProvider.getUriForFile(this@MainActivity, "$packageName.fileprovider", f)
+                runOnUiThread {
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "application/octet-stream"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    startActivity(Intent.createChooser(send, null))
+                }
+            } catch (e: Exception) {
+                reportError("share_fail", e.message)
             }
         }
 
@@ -473,6 +544,12 @@ class MainActivity : AppCompatActivity() {
         binOriginal?.let { File(dir, "$binName-$stamp.bak").writeBytes(it) }
         slotOriginal?.let { File(dir, "$slotName-$stamp.bak").writeBytes(it) }
         backedUp = true
+        // keep the newest 40 unlocked backups so storage cannot fill up
+        dir.listFiles()
+            ?.filter { it.isFile && it.name.endsWith(".bak") && !it.name.endsWith(".keep.bak") }
+            ?.sortedByDescending { it.lastModified() }
+            ?.drop(40)
+            ?.forEach { it.delete() }
     }
 
     private fun displayName(uri: Uri): String? =

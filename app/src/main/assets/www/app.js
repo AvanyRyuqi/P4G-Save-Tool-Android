@@ -80,6 +80,16 @@
   }
   const sigOf = (o) => JSON.stringify(o);
   let hist = [], histSig = [], hi = -1, snapTimer = null, savedSig = null, base = null;
+  let compareMode = false;
+  // ---- draft autosave: unsaved edits survive the app being closed / killed
+  const DRAFT_KEY = 'p4g-draft';
+  function readDraft() { try { const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); return d && d.bin ? d : null; } catch (e) { return null; } }
+  function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch (e) { /* ignore */ } }
+  function syncDraft() {
+    if (!S) return;
+    if (!dirty) { clearDraft(); return; }
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ name: fileName, slotName, bin: toB64(currentBytes()), slot: slotBytes ? toB64(slotBytes) : null, t: Date.now() })); } catch (e) { /* storage full / unavailable */ }
+  }
   function resetHistory() {
     clearTimeout(snapTimer); snapTimer = null;
     hist = [deepClone(S)]; histSig = [sigOf(S)]; hi = 0; savedSig = histSig[0]; base = deepClone(S);
@@ -93,7 +103,7 @@
     hist.push(deepClone(S)); histSig.push(sg);
     if (hist.length > 80) { hist.shift(); histSig.shift(); }
     hi = hist.length - 1;
-    dirty = sg !== savedSig; updateTopbar();
+    dirty = sg !== savedSig; updateTopbar(); syncDraft();
   }
   function markDirty() {
     dirty = true; updateTopbar();
@@ -101,7 +111,7 @@
   }
   function gotoHist(i) {
     hi = i; S = deepClone(hist[hi]);
-    dirty = histSig[hi] !== savedSig; updateTopbar(); render();
+    dirty = histSig[hi] !== savedSig; updateTopbar(); syncDraft(); render();
   }
   function undo() { commitSnap(); if (hi <= 0) return toast(t('nothing_undo')); gotoHist(hi - 1); toast(t('undone')); }
   function redo() { commitSnap(); if (hi >= hist.length - 1) return toast(t('nothing_redo')); gotoHist(hi + 1); toast(t('redone')); }
@@ -162,6 +172,23 @@
           h('button', { class: 'btn accent', onclick: go }, okLabel || t('ok')))));
       modals.push(entry);
       document.body.append(scrim);
+    });
+  }
+
+  function promptText(message, def, okLabel) {
+    return new Promise((resolve) => {
+      const scrim = h('div', { class: 'scrim center' });
+      const entry = { close: () => done(undefined) };
+      const done = (v) => { const i = modals.indexOf(entry); if (i >= 0) modals.splice(i, 1); scrim.remove(); resolve(v); };
+      const inp = h('input', { type: 'text', value: def || '', autocomplete: 'off', style: 'margin-bottom:12px' });
+      const go = () => { const v = inp.value.trim(); done(v || undefined); };
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+      scrim.append(h('div', { class: 'dialog' }, h('p', null, message), inp,
+        h('div', { class: 'btns' }, h('button', { class: 'btn', onclick: () => done(undefined) }, t('cancel')),
+          h('button', { class: 'btn accent', onclick: go }, okLabel || t('ok')))));
+      modals.push(entry);
+      document.body.append(scrim);
+      setTimeout(() => inp.focus(), 50);
     });
   }
 
@@ -319,7 +346,7 @@
   /** Text export / import of a single Persona (copy & paste friendly, no files needed). */
   function personaExchange(p, opts, refresh) {
     const dump = () => JSON.stringify({ p4g: 1, id: p.id, level: p.level, totalxp: p.totalxp, skills: p.skills, st: p.st, ma: p.ma, de: p.de, ag: p.ag, lu: p.lu });
-    const ta = h('textarea', { rows: 9, spellcheck: 'false', autocapitalize: 'none', class: 'ta' });
+    const ta = h('textarea', { rows: 7, spellcheck: 'false', autocapitalize: 'none', class: 'ta' });
     ta.value = dump();
     const copy = async () => {
       ta.focus(); ta.select();
@@ -328,22 +355,45 @@
       if (ok) toast(t('ei_copied'));
     };
     const inRange = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
-    const apply = () => {
-      let o;
-      try { o = JSON.parse(ta.value); } catch (e) { o = null; }
-      const ok = o && typeof o === 'object' && inRange(o.id, 0, 65535) && inRange(o.level, 0, 255) && inRange(o.totalxp, 0, 4294967295)
-        && Array.isArray(o.skills) && o.skills.length === 8 && o.skills.every((x) => inRange(x, 0, 65535))
-        && ['st', 'ma', 'de', 'ag', 'lu'].every((k) => inRange(o[k], 0, 255));
-      if (!ok) { toast(t('ei_bad'), true); return; }
+    const validObj = (o) => o && typeof o === 'object' && inRange(o.id, 0, 65535) && inRange(o.level, 0, 255) && inRange(o.totalxp, 0, 4294967295)
+      && Array.isArray(o.skills) && o.skills.length === 8 && o.skills.every((x) => inRange(x, 0, 65535))
+      && ['st', 'ma', 'de', 'ag', 'lu'].every((k) => inRange(o[k], 0, 255));
+    const applyObj = (o) => {
+      if (!validObj(o)) { toast(t('ei_bad'), true); return; }
       if (opts.idPicker) { p.id = o.id; p.exists = o.id !== 0; }
       p.level = o.level; p.totalxp = o.totalxp; p.skills = o.skills.slice();
       ['st', 'ma', 'de', 'ag', 'lu'].forEach((k) => { p[k] = o[k]; });
       markDirty(); commitSnap(); handle.close(); refresh(); if (opts.onIdChange) opts.onIdChange(); toast(t('ei_applied'));
     };
+    const apply = () => { let o; try { o = JSON.parse(ta.value); } catch (e) { o = null; } applyObj(o); };
+
+    const builds = () => { try { const b = JSON.parse(localStorage.getItem('p4g-builds') || '[]'); return Array.isArray(b) ? b.filter((x) => x && x.name && validObj(x.data)) : []; } catch (e) { return []; } };
+    const putBuilds = (b) => { try { localStorage.setItem('p4g-builds', JSON.stringify(b)); } catch (e) { /* ignore */ } };
+    const buildList = h('div', { class: 'list' });
+    const paintBuilds = () => {
+      buildList.replaceChildren();
+      const all = builds();
+      if (!all.length) { buildList.append(h('p', { class: 'hint' }, t('build_none'))); return; }
+      all.forEach((b, i) => buildList.append(h('div', { class: 'item' },
+        h('div', { class: 'name' }, h('b', null, b.name), h('small', null, personaName(b.data.id) + ' Lv ' + b.data.level)),
+        h('button', { class: 'btn small', onclick: () => applyObj(b.data) }, t('build_apply')),
+        h('button', { class: 'btn small danger', onclick: () => { const x = builds(); x.splice(i, 1); putBuilds(x); paintBuilds(); toast(t('build_deleted')); } }, t('delete')))));
+    };
+    const saveBuild = async () => {
+      const name = await promptText(t('build_name_q'), personaName(p.id) + ' Lv' + p.level, t('save'));
+      if (!name) return;
+      const x = builds(); x.push({ name, data: JSON.parse(dump()) }); putBuilds(x); paintBuilds(); toast(t('build_saved'));
+    };
+    const canShare = bridge && bridge.shareText;
     const handle = openSheet(t('ei_title'), h('div', null, h('p', { class: 'hint', style: 'margin-top:0' }, t('ei_hint')), ta,
-      h('div', { class: 'toolbar', style: 'margin-top:10px' },
+      h('div', { class: 'toolbar', style: 'margin-top:10px;flex-wrap:wrap' },
         h('button', { class: 'btn', onclick: copy }, t('ei_copy')),
-        h('button', { class: 'btn accent', onclick: apply }, t('ei_apply')))));
+        canShare ? h('button', { class: 'btn', onclick: () => bridge.shareText(ta.value) }, t('share')) : null,
+        h('button', { class: 'btn accent', onclick: apply }, t('ei_apply'))),
+      h('h3', { style: 'margin:16px 0 8px;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)' }, t('builds')),
+      h('button', { class: 'btn', style: 'width:100%;margin-bottom:10px', onclick: saveBuild }, t('build_save')),
+      buildList));
+    paintBuilds();
   }
 
   // ------------------------------------------------------------------- tabs
@@ -602,7 +652,11 @@
     menuEl = h('div', { class: 'menu' },
       S ? m(undo, t('undo')) : null, S ? m(redo, t('redo')) : null,
       S && dirty ? m(discardChanges, t('reset_changes')) : null,
+      S ? m(showSearch, t('search_all')) : null,
+      S ? m(showSummary, t('summary')) : null,
       S ? m(showPresets, t('presets')) : null,
+      S ? m(doCompare, t('compare')) : null,
+      S && bridge && bridge.shareFile ? m(showShare, t('share')) : null,
       bridge && bridge.listBackups ? m(showBackups, t('backups')) : null,
       h('button', { onclick: () => { toggleMenu(); doSaveAs(); } }, t('save_as')),
       hasFolderAccess() ? h('button', { onclick: () => { toggleMenu(); openSaveFolder(); } }, t('open_folder')) : null,
@@ -625,7 +679,15 @@
         hasFolderAccess() ? h('button', { class: 'btn accent', onclick: openSaveFolder }, t('open_folder')) : null,
         h('button', { class: hasFolderAccess() ? 'btn' : 'btn accent', onclick: doOpen }, t('open_save')),
         h('p', { class: 'hint' }, t('switch_hint')),
-        h('p', { class: 'hint' }, t('backup_hint'))));
+        h('p', { class: 'hint' }, t('backup_hint')),
+        (() => {
+          const d = readDraft();
+          if (!d) return null;
+          return h('div', { class: 'card', style: 'width:100%;max-width:420px' }, h('p', null, t('draft_found', { name: d.name })),
+            h('div', { class: 'toolbar' },
+              h('button', { class: 'btn accent', onclick: () => restoreDraft(d) }, t('draft_restore')),
+              h('button', { class: 'btn danger', onclick: () => { clearDraft(); render(); } }, t('draft_discard'))));
+        })()));
       return;
     }
     TABS.forEach(([key, label, fn]) => navEl.append(h('button', { class: key === tab ? 'on' : '', onclick: () => { tab = key; render(); mainEl.scrollTop = 0; }, html: ICONS[key] + '<span>' + t(label) + '</span>' })));
@@ -739,34 +801,130 @@
       })));
   }
 
+  const stampRe = /-(\d{8}-\d{6})(\.keep)?\.bak$/;
   function showBackups() {
     if (!S) { toast(t('backups_need_file')); return; }
     let arr = [];
     try { arr = JSON.parse(bridge.listBackups() || '[]'); } catch (e) { arr = []; }
-    const mine = arr.filter((b) => b.name.startsWith(fileName + '-') && b.name.endsWith('.bak'));
-    const fmtStamp = (n) => { const m = /-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\.bak$/.exec(n); return m ? m[1] + '-' + m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5] + ':' + m[6] : n; };
+    const stampOf = (n) => { const m = stampRe.exec(n); return m ? { stamp: m[1], locked: !!m[2] } : null; };
+    const mine = arr.filter((b) => b.name.startsWith(fileName + '-') && stampOf(b.name)).map((b) => {
+      const st = stampOf(b.name);
+      const partner = slotName ? arr.find((x) => x.name.startsWith(slotName + '-') && stampOf(x.name) && stampOf(x.name).stamp === st.stamp) : null;
+      return Object.assign({}, b, st, { partner: partner ? partner.name : null });
+    });
+    const fmt = (st) => st.slice(0, 4) + '-' + st.slice(4, 6) + '-' + st.slice(6, 8) + ' ' + st.slice(9, 11) + ':' + st.slice(11, 13) + ':' + st.slice(13, 15);
     let handle;
+    const reopen = () => { handle.close(); showBackups(); };
     const list = h('div', { class: 'list' });
-    mine.forEach((b) => list.append(h('div', { class: 'item tap', onclick: () => { handle.close(); restoreBackup(b); } },
-      h('div', { class: 'name' }, h('b', null, fmtStamp(b.name)), h('small', null, Math.round(b.size / 1024) + ' KB')), h('span', { class: 'hint' }, '›'))));
-    handle = openSheet(t('backups_title', { name: fileName }), mine.length ? list : h('p', { class: 'empty' }, t('backups_none')));
+    mine.forEach((b) => list.append(h('div', { class: 'item' },
+      h('div', { class: 'name tap', style: 'cursor:pointer', onclick: () => { handle.close(); restoreBackup(b); } },
+        h('b', null, fmt(b.stamp)), h('small', null, Math.round(b.size / 1024) + ' KB' + (b.locked ? ' · ' + t('bk_locked') : ''))),
+      h('button', { class: 'btn small', onclick: () => {
+        const names = [b.name].concat(b.partner ? [b.partner] : []);
+        names.forEach((n) => bridge.toggleBackupLock(n));
+        reopen();
+      } }, b.locked ? t('bk_unlock') : t('bk_lock')),
+      h('button', { class: 'btn small danger', onclick: async () => {
+        if (!(await confirmDialog(t('bk_delete_q'), t('bk_delete'), true))) return;
+        [b.name].concat(b.partner ? [b.partner] : []).forEach((n) => bridge.deleteBackup(n));
+        toast(t('bk_deleted')); reopen();
+      } }, t('bk_delete')))));
+    handle = openSheet(t('backups_title', { name: fileName }), h('div', null,
+      mine.length ? list : h('p', { class: 'empty' }, t('backups_none')), h('p', { class: 'hint' }, t('bk_hint'))));
   }
   async function restoreBackup(b) {
     if (!(await confirmDialog(t('restore_q'), t('restore_btn'), true))) return;
     const b64 = bridge.readBackup(b.name);
     if (!b64) { toast(t('restore_fail'), true); return; }
-    const stamp = b.name.slice(fileName.length + 1, -4);
     let slot = null;
     if (slotBytes) {
       let sb = slotBytes;
-      const s64 = bridge.readBackup(slotName + '-' + stamp + '.bak');
+      const s64 = b.partner ? bridge.readBackup(b.partner) : '';
       if (s64) sb = fromB64(s64);
       slot = { name: slotName, bytes: sb };
     }
     const keepBase = base, name = fileName;
     if (!loadBytes(name, fromB64(b64), slot, true)) return;
-    base = keepBase || base; savedSig = null; dirty = true; updateTopbar();
+    base = keepBase || base; savedSig = null; dirty = true; updateTopbar(); syncDraft();
     toast(t('restored'));
+  }
+
+  // ------------------------------------------------------- search / summary / share
+  function showSearch() {
+    if (!S) return;
+    const itemSec = {};
+    CAT.sections.forEach((sec, i) => sec.items.forEach((it) => { itemSec[it.id] = i; }));
+    const holders = [];
+    S.mcSlots.forEach((p, i) => { if (p.id) holders.push({ p, loc: t('sa_in_slot', { n: i + 1 }), go: () => { tab = 'stats'; memberIdx = 0; slotIdx = i; } }); });
+    for (let i = 1; i < S.memberPersona.length; i++) { const p = S.memberPersona[i]; if (p && p.id) holders.push({ p, loc: memberName(i), go: () => { tab = 'stats'; memberIdx = i; slotIdx = 0; } }); }
+    S.compendium.forEach((p) => holders.push({ p, loc: t('sa_in_comp'), go: () => { tab = 'comp'; compFilter = personaName(p.id); } }));
+    const input = h('input', { type: 'text', placeholder: t('search_all_ph'), autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false' });
+    const out = h('div');
+    let handle;
+    const go = (fn) => { handle.close(); fn(); render(); mainEl.scrollTop = 0; };
+    const section = (title, rows) => rows.length ? [h('p', { class: 'hint', style: 'margin:12px 0 4px;color:var(--accent)' }, title), rows] : [];
+    const row2 = (name, sub, fn) => h('button', { class: 'opt', onclick: fn }, h('span', null, name), h('small', null, sub));
+    const run = () => {
+      out.replaceChildren();
+      const tokens = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      if (!tokens.length || input.value.trim().length < 2) { out.append(h('p', { class: 'empty' }, t('sa_none'))); return; }
+      const hit = (name) => tokens.every((w) => name.toLowerCase().includes(w));
+      const LIM = 12;
+      const items = [];
+      for (let id = 0; id < DB.allItems.length && items.length < LIM; id++) {
+        const n = DB.allItems[id];
+        if (n == null || n === 'Blank' || id === 1792 || !hit(n)) continue;
+        const owned = S.inventory[id] || 0;
+        items.push(row2(n, owned ? t('sa_owned', { n: owned }) : t('sa_not_owned'), async () => {
+          if (!owned && !(await confirmDialog(t('sa_add_item_q', { name: n }), t('add')))) return;
+          if (!owned) { S.inventory[id] = 1; markDirty(); }
+          handle.close(); tab = 'inv'; invSection = itemSec[id] != null ? itemSec[id] : 0; invFilter = n; render(); mainEl.scrollTop = 0;
+        }));
+      }
+      const pers = holders.filter((x) => hit(personaName(x.p.id))).slice(0, LIM).map((x) => row2(personaName(x.p.id) + ' Lv ' + x.p.level, x.loc, () => go(x.go)));
+      const skills = [];
+      holders.forEach((x) => x.p.skills.forEach((sid) => { if (sid && skills.length < LIM && DB.allSkills[sid] != null && hit(DB.allSkills[sid])) skills.push(row2(DB.allSkills[sid], personaName(x.p.id) + ' · ' + x.loc, () => go(x.go))); }));
+      const links = CAT.socialLinkIDs.filter((x) => x.id !== 0 && hit(x.name + ' ' + x.arcana)).slice(0, LIM)
+        .map((x) => row2(x.name, x.arcana + ' · ' + (S.socialLinks.some((l) => l.id === x.id) ? t('sa_in_save') : t('sa_not_in_save')), () => go(() => { tab = 'social'; })));
+      const all = [].concat(section(t('sa_items'), items), section(t('sa_personas'), pers), section(t('sa_skills'), skills), section(t('sa_links'), links));
+      if (!all.length) out.append(h('p', { class: 'empty' }, t('no_results_for', { q: input.value.trim() })));
+      else out.append(...all.flat(Infinity));
+    };
+    input.addEventListener('input', run);
+    handle = openSheet(t('search_all'), h('div', null, input, out), { full: true });
+    run();
+    setTimeout(() => input.focus(), 50);
+  }
+
+  function showSummary() {
+    if (!S) return;
+    const total = []; for (let id = 1; id <= P4G.COMPENDIUM_COUNT; id++) if (DB.personae[id] && DB.personae[id] !== 'Blank') total.push(id);
+    const reg = S.compendium.filter((p) => total.includes(p.id)).length;
+    const kinds = S.inventory.filter((c, id) => c > 0 && id !== 1792 && DB.allItems[id] != null && DB.allItems[id] !== 'Blank').length;
+    const party = [0, 1, 2].map((i) => nameOf(CAT.partyChoices, S.party[i])).join(', ');
+    const rows = [
+      [t('sm_format'), slotBytes ? t('fmt_switch') + ' + binslot' : t('fmt_bin')],
+      [t('d_yen'), S.yen.toLocaleString(lang === 'id' ? 'id-ID' : 'en-US')],
+      [t('d_level'), String(S.mcLevel)],
+      [t('sm_date'), t('d_day') + ' ' + S.day + ' · ' + DB.phases[S.dayPhase]],
+      [t('sm_compendium'), t('sm_of', { a: reg, b: total.length, p: total.length ? Math.round(reg * 100 / total.length) : 0 })],
+      [t('sm_personas'), String(S.mcSlots.filter((p) => p.id).length) + ' / 12'],
+      [t('sm_items'), t('sm_kinds', { n: kinds })],
+      [t('sm_links'), String(S.socialLinks.length) + ' / 23'],
+      [t('sm_party'), party],
+    ];
+    CAT.statNames.forEach((n, st) => rows.push([n, 'Lv ' + P4G.pointsToLevel(st, S.socialStats[st])]));
+    openSheet(t('summary'), h('div', null, rows.map(([k, v]) => h('div', { class: 'row', style: 'border-bottom:1px solid var(--line);padding-bottom:6px' }, h('label', { style: 'flex:0 0 120px' }, k), h('div', { class: 'grow', style: 'text-align:right' }, v)))));
+  }
+
+  function showShare() {
+    if (!S) return;
+    const out = currentBytes(), slot = currentSlot(out);
+    let handle;
+    const opt = (label, fn) => h('button', { class: 'opt', onclick: () => { handle.close(); fn(); } }, h('span', null, label));
+    handle = openSheet(t('share'), h('div', null,
+      opt(t('share_bin') + ' (' + (fileName || 'save.bin') + ')', () => bridge.shareFile(fileName || 'save.bin', toB64(out))),
+      slot ? opt(t('share_slot') + ' (' + slotName + ')', () => bridge.shareFile(slotName, toB64(slot))) : null));
   }
 
   function showSettings() {
@@ -797,7 +955,7 @@
       S = parsed; orig = bytes; fileName = name; dirty = false;
       slotBytes = slot ? slot.bytes : null; slotName = slot ? slot.name : '';
       memberIdx = 0; slotIdx = 0; invFilter = ''; compFilter = ''; tab = 'stats';
-      resetHistory();
+      resetHistory(); clearDraft();
       build();
       if (!silent) {
         toast(t('opened', { name: name + (slot ? ' + ' + slot.name : '') }));
@@ -811,6 +969,13 @@
   }
   /** files: [{name, bytes}] - one .bin plus an optional .binslot, in any order. */
   function loadFiles(files) {
+    if (compareMode) {
+      compareMode = false;
+      const only = files.find((f) => !/\.binslot$/i.test(f.name));
+      if (!only) { toast(t('compare_pick_bin'), true); return; }
+      try { showCompare(only.name, P4G.parse(only.bytes)); } catch (e) { toast(e.code ? t('err_' + e.code, e.args) : (e.message || String(e)), true); }
+      return;
+    }
     const slot = files.find((f) => /\.binslot$/i.test(f.name));
     const bin = files.find((f) => f !== slot);
     if (!bin) { toast(t('pick_bin'), true); return; }
@@ -825,6 +990,7 @@
   async function openSaveFolder() {
     if (!hasFolderAccess()) return doOpen();
     if (dirty && !(await confirmDialog(t('discard_open'), t('open'), true))) return;
+    compareMode = false;
     toast(t('scanning'));
     bridge.scanSaves(getDir());
   }
@@ -867,6 +1033,10 @@
 
   async function doOpen() {
     if (dirty && !(await confirmDialog(t('discard_open'), t('open'), true))) return;
+    compareMode = false;
+    pickFiles();
+  }
+  function pickFiles() {
     if (bridge) bridge.openFile();
     else {
       const inp = h('input', { type: 'file', multiple: true });
@@ -877,6 +1047,22 @@
       });
       inp.click();
     }
+  }
+  function doCompare() {
+    if (!S) return;
+    commitSnap();
+    compareMode = true;
+    pickFiles();
+  }
+  function showCompare(name, other) {
+    const lines = diffLines(S, other);
+    openSheet(t('compare_title', { name }), h('div', null, h('p', { class: 'hint', style: 'margin-top:0' }, t('compare_hint')),
+      lines.length ? h('div', { class: 'changes', style: 'max-height:none' }, lines.slice(0, 300).map((x) => h('div', null, x))) : h('p', { class: 'empty' }, t('compare_none'))), { full: true });
+  }
+  function restoreDraft(d) {
+    const slot = d.slot ? { name: d.slotName || 'save.binslot', bytes: fromB64(d.slot) } : null;
+    if (!loadBytes(d.name || 'save.bin', fromB64(d.bin), slot, true)) { clearDraft(); return; }
+    savedSig = null; dirty = true; updateTopbar(); syncDraft(); toast(t('draft_restored'));
   }
   function currentBytes() { return P4G.serialize(S, orig); }
   function currentSlot(bin) { return slotBytes ? P4G.patchBinslot(slotBytes, bin) : null; }
@@ -890,6 +1076,7 @@
     if (!(await reviewDialog(bridge ? t('overwrite_q', { names }) : '', t('save')))) return;
     if (!bridge) return doSaveAs(true);
     const out = currentBytes(), slot = currentSlot(out);
+    if (slot && !P4G.verifySlot(slot, out)) { toast(t('err_verify_bad'), true); return; }
     pendingBytes = out; pendingSlot = slot;
     bridge.saveFile(toB64(out), slot ? toB64(slot) : '');
   }
@@ -897,18 +1084,19 @@
     if (!S) return;
     if (skipReview !== true && !(await reviewDialog('', t('save_as')))) return;
     const out = currentBytes(), slot = currentSlot(out);
+    if (slot && !P4G.verifySlot(slot, out)) { toast(t('err_verify_bad'), true); return; }
     if (bridge) { pendingBytes = out; pendingSlot = slot; bridge.saveFileAs(fileName || 'save.bin', toB64(out), slotName, slot ? toB64(slot) : ''); }
     else {
       download(fileName || 'save.bin', out);
       if (slot) setTimeout(() => download(slotName, slot), 400);
-      orig = out; if (slot) slotBytes = slot; commitSnap(); savedSig = sigOf(S); base = deepClone(S); dirty = false; updateTopbar(); toast(t('downloaded'));
+      orig = out; if (slot) slotBytes = slot; commitSnap(); savedSig = sigOf(S); base = deepClone(S); dirty = false; updateTopbar(); clearDraft(); toast(t('downloaded'));
     }
   }
   let pendingBytes = null, pendingSlot = null;
 
   // callbacks invoked by the Android host
   window.__onFilesOpened = (arr) => loadFiles(arr.map((f) => ({ name: f.name, bytes: fromB64(f.b64) })));
-  window.__onSaved = (name) => { if (pendingBytes) { orig = pendingBytes; pendingBytes = null; } if (pendingSlot) { slotBytes = pendingSlot; pendingSlot = null; } if (name) fileName = name; commitSnap(); savedSig = sigOf(S); base = deepClone(S); dirty = false; updateTopbar(); toast(t('saved', { name: fileName })); };
+  window.__onSaved = (name) => { if (pendingBytes) { orig = pendingBytes; pendingBytes = null; } if (pendingSlot) { slotBytes = pendingSlot; pendingSlot = null; } if (name) fileName = name; commitSnap(); savedSig = sigOf(S); base = deepClone(S); dirty = false; updateTopbar(); clearDraft(); toast(t('saved', { name: fileName })); };
   window.__onError = (code, detail) => { pendingBytes = null; pendingSlot = null; toast(STR.en['err_' + code] ? t('err_' + code, { detail }) : code, true); };
   window.__back = () => {
     if (menuEl) { toggleMenu(); return 'handled'; }

@@ -16,6 +16,14 @@ Edit file save **Persona 4 Golden** (`.bin`, hasil dump dari PS Vita) langsung d
 Tambahan di versi Android: **pilihan bahasa Indonesia / English** (menu ⋮ ▸ Bahasa / Language, tersimpan di perangkat), pencarian di semua daftar pilihan, buka/simpan lewat file picker sistem, **cadangan otomatis** file asli sebelum ditimpa
 (`Android/data/app.p4gsavetool/files/backups/`), dan konfirmasi saat keluar bila ada perubahan belum disimpan.
 
+## Info skill
+
+Di pemilih skill, setiap skill menampilkan elemen, biaya, target, dan efek. Tombol **ⓘ** (di pemilih dan di samping skill
+yang sudah terpasang) membuka detail: sumber Skill Card dan daftar Persona yang mempelajarinya. Membuka info tidak mengubah skill.
+Data tersimpan offline di `skill-info.js`, dibuat dari [aqiu384/megaten-fusion-tool](https://github.com/aqiu384/megaten-fusion-tool)
+(Unlicense) dengan `python tools/gen_skill_info.py <folder-clone>`. Teks efek berbahasa Inggris seperti data game lainnya.
+"Syarat khusus (kode)" adalah kode asli dari sumber untuk skill anggota party yang tidak didapat lewat level biasa.
+
 ## Baca folder save langsung
 
 Di layar awal tekan **Buka folder save**. Aplikasi mencari `data*.bin` (beserta `.binslot`) di folder
@@ -88,6 +96,10 @@ Untuk rilis ke Play Store, buat keystore sendiri dan tambahkan `signingConfigs`.
 ## Perbedaan dari versi desktop (perbaikan bug)
 
 Semua offset dan format data identik dengan aslinya. Beberapa perilaku yang berisiko merusak save diperbaiki:
+
+* **Byte yang belum dikenal dipertahankan**: record social link dan compendium disalin utuh dari file asli, hanya field yang
+  dikenal yang ditulis ulang (record yang dihapus dikosongkan). Nama hanya ditulis ulang bila diubah. Menyimpan tanpa
+  mengedit menghasilkan file yang identik byte demi byte.
 
 1. **Equipment Kanji/Naoto/Teddie**: versi asli menulis armor/accessory/costume memakai indeks daftar (bukan ID karakter)
    sehingga masuk ke slot yang salah. Di sini selalu memakai ID karakter yang benar.

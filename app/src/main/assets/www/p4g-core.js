@@ -104,7 +104,8 @@
     };
   }
   function writePersona(b, p, x) {
-    b[p] = x.exists ? 1 : 0;
+    if (!x.exists) b[p] = 0;
+    else if (b[p] === 0) b[p] = 1; // any other non-zero flag value already means "exists": keep it
     b[p + 1] = x.unknown0 & 0xff;
     w16(b, p + 2, x.id);
     b[p + 4] = x.level & 0xff;
@@ -169,14 +170,70 @@
   // -------------------------------------------------------------- serialize
   const clampByte = (n) => Math.max(0, Math.min(255, n | 0));
 
+  // Only some bytes of a social link / compendium record are understood. Each record is therefore
+  // carried over whole from the original file and only the known fields are written on top.
+  // Records are copied from "original" (never from the output) so moves cannot overwrite each other.
+
+  function writeSocialLinks(b, original, links) {
+    const SIZE = 16, COUNT = 23, at = (i) => OFF.socialLinks + i * SIZE;
+    const used = [];
+    for (let i = 0; i < COUNT; i++) if (original[at(i)] !== 0) used.push(i);
+    const kept = links.slice(0, COUNT);
+    // Same links in the same order: leave every record where it is (gaps included).
+    const unmoved = kept.length === used.length && kept.every((l, n) => (l.id & 0xff) === original[at(used[n])]);
+    const pool = used.slice();
+    const out = kept.map((l, n) => {
+      const j = pool.findIndex((i) => original[at(i)] === (l.id & 0xff));
+      const rec = j < 0 ? new Uint8Array(SIZE) : original.slice(at(pool[j]), at(pool[j]) + SIZE);
+      if (j >= 0) pool.splice(j, 1);
+      rec[0] = l.id & 0xff; rec[2] = l.level & 0xff; rec[4] = l.progress & 0xff; rec[12] = l.flag & 0xff;
+      return { slot: unmoved ? used[n] : n, rec };
+    });
+    // clear records that held a link and are now free; never-used records keep their bytes
+    const taken = new Set(out.map((x) => x.slot));
+    for (const i of used) if (!taken.has(i)) b.fill(0, at(i), at(i) + SIZE);
+    for (const x of out) b.set(x.rec, at(x.slot));
+  }
+
+  function writeCompendium(b, original, entries) {
+    const STRIDE = 48, at = (i) => OFF.compendium + i * STRIDE;
+    // the last record may be cut off right after its known bytes in a minimum-size file
+    const end = (i) => Math.min(at(i) + STRIDE, OFF.compendium + COMPENDIUM_ZERO, original.length);
+    const idAt = (i) => u16(original, at(i) + 2);
+    const sources = new Map(); // persona id -> original record index, preferring the record at id - 1
+    for (let i = 0; i < COMPENDIUM_COUNT; i++) {
+      const id = idAt(i);
+      if (id !== 0 && (!sources.has(id) || i === id - 1)) sources.set(id, i);
+    }
+    const wanted = new Set(entries.map((pe) => pe.id));
+    const targets = new Set(entries.filter((pe) => pe.id >= 1 && pe.id <= COMPENDIUM_COUNT).map((pe) => pe.id - 1));
+    // clear removed (or moved-away) records only. Ids that cannot be addressed stay where they are.
+    for (let i = 0; i < COMPENDIUM_COUNT; i++) {
+      const id = idAt(i);
+      const unaddressable = id > COMPENDIUM_COUNT && wanted.has(id);
+      if (id !== 0 && !targets.has(i) && !unaddressable) b.fill(0, at(i), end(i));
+    }
+    for (const pe of entries) {
+      if (pe.id < 1 || pe.id > COMPENDIUM_COUNT) continue; // cannot be addressed
+      const to = pe.id - 1, from = sources.get(pe.id);
+      const rec = new Uint8Array(STRIDE);
+      if (from !== undefined) rec.set(original.subarray(at(from), end(from)));
+      writePersona(rec, 0, pe);
+      b.set(rec.subarray(0, end(to) - at(to)), at(to));
+    }
+  }
+
   function serialize(state, original) {
     const b = new Uint8Array(original); // copy: unknown regions stay untouched
-    writeJString(b, OFF.jSurname, state.surname);
-    writeJString(b, OFF.jFirstname, state.firstname);
+    // Names are rewritten only when edited: decoding is lossy, so re-encoding an untouched name could alter it.
+    const renamed = (key, p) => state[key] !== readPString(original, p);
+    const newSurname = renamed('surname', OFF.pSurname), newFirstname = renamed('firstname', OFF.pFirstname);
+    if (newSurname) writeJString(b, OFF.jSurname, state.surname);
+    if (newFirstname) writeJString(b, OFF.jFirstname, state.firstname);
     w32(b, OFF.yen, state.yen);
     for (let i = 0; i < 3; i++) b[OFF.party + i * 2] = state.party[i] & 0xff;
-    writePString(b, OFF.pSurname, state.surname);
-    writePString(b, OFF.pFirstname, state.firstname);
+    if (newSurname) writePString(b, OFF.pSurname, state.surname);
+    if (newFirstname) writePString(b, OFF.pFirstname, state.firstname);
     for (let i = 0; i < INVENTORY_SIZE; i++) b[OFF.inventory + i] = clampByte(state.inventory[i]);
 
     for (let i = 0; i < 12; i++) writePersona(b, OFF.mcPersonas + i * 48, state.mcSlots[i]);
@@ -198,18 +255,8 @@
     b[OFF.day] = state.day & 0xff; b[OFF.dayPhase] = state.dayPhase & 0xff;
     b[OFF.nextDay] = state.nextDay & 0xff; b[OFF.nextDayPhase] = state.nextDayPhase & 0xff;
 
-    b.fill(0, OFF.socialLinks, OFF.socialLinks + 368);
-    const n = Math.min(23, state.socialLinks.length);
-    for (let i = 0; i < n; i++) {
-      const l = state.socialLinks[i], p = OFF.socialLinks + i * 16;
-      b[p] = l.id & 0xff; b[p + 2] = l.level & 0xff; b[p + 4] = l.progress & 0xff; b[p + 12] = l.flag & 0xff;
-    }
-
-    b.fill(0, OFF.compendium, OFF.compendium + COMPENDIUM_ZERO);
-    for (const pe of state.compendium) {
-      if (pe.id < 1 || pe.id > COMPENDIUM_COUNT) continue; // cannot be addressed
-      writePersona(b, OFF.compendium + 48 * (pe.id - 1), pe);
-    }
+    writeSocialLinks(b, original, state.socialLinks);
+    writeCompendium(b, original, state.compendium);
     return b;
   }
 

@@ -1,6 +1,9 @@
 /* UI strings. Game data (items, skills, personas, stat names) stays in English in both languages. */
 window.P4G_I18N = {
   id: {
+    sk_info: 'Info skill: {name}', sk_elem: 'Elemen', sk_cost: 'Biaya', sk_target: 'Target', sk_effect: 'Efek', sk_card: 'Skill Card',
+    sk_passive: 'Pasif', sk_no_effect: 'Tidak ada keterangan efek di sumber data.', sk_learned: 'Dipelajari oleh', sk_learned_none: 'Tidak ada Persona yang tercatat mempelajari skill ini.',
+    sk_innate: 'Bawaan', sk_special: 'Syarat khusus ({code})', sk_source: 'Data: aqiu384/megaten-fusion-tool (Persona 4 Golden).',
     lang_name: 'Bahasa Indonesia',
     // generic
     ok: 'OK', cancel: 'Batal', close: 'Tutup', choose: 'Pilih', delete: 'Hapus', add: '+ Tambah', delete_all: 'Hapus semua',
@@ -292,6 +295,9 @@ window.P4G_I18N = {
     tools: 'Alat lanjutan',
   },
   en: {
+    sk_info: 'Skill info: {name}', sk_elem: 'Element', sk_cost: 'Cost', sk_target: 'Target', sk_effect: 'Effect', sk_card: 'Skill Card',
+    sk_passive: 'Passive', sk_no_effect: 'The data source has no effect description.', sk_learned: 'Learned by', sk_learned_none: 'No Persona is listed as learning this skill.',
+    sk_innate: 'Innate', sk_special: 'Special unlock ({code})', sk_source: 'Data: aqiu384/megaten-fusion-tool (Persona 4 Golden).',
     lang_name: 'English',
     ok: 'OK', cancel: 'Cancel', close: 'Close', choose: 'Choose', delete: 'Delete', add: '+ Add', delete_all: 'Delete all',
     open: 'Open', save: 'Save', menu: 'Menu', save_as: 'Save as…', about: 'About', language: 'Language / Bahasa',

@@ -177,3 +177,82 @@ test('doctor: finds corrupted data and fixes it completely', () => {
   assert.deepStrictEqual(P4G.diagnose(s, db, cat).filter((x) => x.sev === 'warn'), []);
   assert.ok(P4G.serialize(s, fakeSave()).length >= 21625);
 });
+
+// ---- bytes the editor does not understand must survive a save ------------------------------
+
+/** A save whose every social link / compendium byte is non-zero noise, with a few real records on top. */
+function noisySave(size = 30000) {
+  const b = new Uint8Array(size); b.set(fakeSave().subarray(0, OFF.socialLinks));
+  const noise = (from, to) => { for (let i = from; i < Math.min(to, size); i++) b[i] = (i % 251) + 1; };
+  noise(OFF.socialLinks, OFF.socialLinks + 368);
+  noise(OFF.compendium, size);
+  // social links in records 0, 1 and 3; record 2 is a gap
+  [7, 11, 0, 20].forEach((id, i) => { b[OFF.socialLinks + i * 16] = id; });
+  for (let i = 4; i < 23; i++) b[OFF.socialLinks + i * 16] = 0;
+  // compendium: ids 1, 100 and 249 registered, every other record has id 0 but leftover bytes
+  for (let i = 0; i < 249; i++) {
+    const p = OFF.compendium + 48 * i, id = [0, 99, 248].includes(i) ? i + 1 : 0;
+    b[p + 2] = id; b[p + 3] = 0;
+  }
+  return b;
+}
+const slice = (b, from, len) => Buffer.from(b.subarray(from, from + len));
+const link = (b, i) => slice(b, OFF.socialLinks + i * 16, 16);
+const comp = (b, id) => slice(b, OFF.compendium + 48 * (id - 1), 48);
+
+test('saving without edits changes nothing, even in unknown bytes', () => {
+  for (const size of [30000, P4G.MIN_FILE_SIZE]) {
+    const orig = noisySave(size);
+    assert.deepStrictEqual(Buffer.from(P4G.serialize(P4G.parse(orig), orig)), Buffer.from(orig), 'size ' + size);
+  }
+  // names the decoder cannot represent exactly, plus the Japanese-style copy
+  const odd = noisySave(); I.writePString(odd, OFF.pFirstname, 'Yu'); odd[OFF.pFirstname + 5] = 5; odd.fill(0x5a, OFF.jSurname, OFF.jSurname + 36);
+  assert.deepStrictEqual(Buffer.from(P4G.serialize(P4G.parse(odd), odd)), Buffer.from(odd));
+});
+
+test('editing a record keeps its unknown bytes', () => {
+  const orig = noisySave(), s = P4G.parse(orig);
+  s.socialLinks[1].level = 9; s.compendium.find((p) => p.id === 100).level = 77;
+  const out = P4G.serialize(s, orig);
+  const diffs = []; for (let i = 0; i < orig.length; i++) if (orig[i] !== out[i]) diffs.push(i);
+  assert.deepStrictEqual(diffs, [OFF.socialLinks + 16 + 2, OFF.compendium + 48 * 99 + 4]);
+});
+
+test('removing and adding records moves unknown bytes with their owner', () => {
+  const orig = noisySave(), s = P4G.parse(orig);
+  s.socialLinks.shift();
+  s.socialLinks.push({ id: 33, level: 1, progress: 0, flag: 0 });
+  s.compendium = s.compendium.filter((p) => p.id !== 100);
+  s.compendium.push(P4G.newPersona(50));
+  const out = P4G.serialize(s, orig);
+  assert.deepStrictEqual(link(out, 0), link(orig, 1)); // id 11 moved up, bytes intact
+  assert.deepStrictEqual(link(out, 1), link(orig, 3)); // id 20 moved up, bytes intact
+  assert.strictEqual(out[OFF.socialLinks + 32], 33);
+  assert.strictEqual(out[OFF.socialLinks + 32 + 8], 0); // a new link starts clean
+  assert.deepStrictEqual(link(out, 3), Buffer.alloc(16)); // vacated record is cleared
+  assert.deepStrictEqual(link(out, 4), link(orig, 4)); // never used: untouched
+  assert.deepStrictEqual(comp(out, 100), Buffer.alloc(48));
+  assert.strictEqual(P4G.parse(out).compendium.map((p) => p.id).join(), '1,50,249');
+  assert.strictEqual(out[OFF.compendium + 48 * 49 + 40], 0);
+  for (const id of [1, 51, 249]) assert.deepStrictEqual(comp(out, id), comp(orig, id));
+});
+
+test('a misplaced compendium record is relocated whole', () => {
+  const orig = noisySave(); orig[OFF.compendium + 48 * 99 + 2] = 120; // record 100 holds persona 120
+  const out = P4G.serialize(P4G.parse(orig), orig);
+  const expected = comp(orig, 100);
+  assert.deepStrictEqual(comp(out, 120), expected);
+  assert.deepStrictEqual(comp(out, 100), Buffer.alloc(48));
+});
+
+test('skill info covers every selectable skill and matches by id', () => {
+  const win = {}; new Function('window', fs.readFileSync(path.join(__dirname, '../app/src/main/assets/www/skill-info.js'), 'utf8'))(win);
+  const info = win.P4G_SKILL_INFO;
+  const selectable = P4G.buildCatalog(db).skills.filter((s) => s.name !== 'Blank');
+  assert.deepStrictEqual(selectable.filter((s) => !info[s.id]).map((s) => s.id), []);
+  // names may only differ by a duplicate suffix ("Mudo B") or the source's wording for Panic
+  const norm = (n) => n.replace(/ [B-J]$/, '').replace('Confuse', 'Panic');
+  assert.deepStrictEqual(selectable.filter((s) => norm(info[s.id].n) !== s.name).map((s) => s.id), []);
+  assert.deepStrictEqual([info[1].c, info[1].d, info[120].c], ['4 SP', '√40 pwr', '6% HP']);
+  assert.ok(Object.values(info).every((v) => !/\$\d/.test(v.d || '')));
+});

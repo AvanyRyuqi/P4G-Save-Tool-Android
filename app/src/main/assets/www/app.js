@@ -220,8 +220,12 @@
         clear.hidden = !search.value;
         count.textContent = search.value.trim() ? t('n_results', { n: res.length }) : t('n_options', { n: options.length });
         list.replaceChildren();
-        res.slice(0, limit).forEach((o) => list.append(h('button', { class: 'opt' + (o.id === currentId ? ' on' : ''), onclick: () => { chosen = o.id; handle.close(); } },
-          h('span', null, o.name), h('small', null, o.sub != null ? o.sub : '#' + o.id))));
+        res.slice(0, limit).forEach((o) => {
+          const opt = h('button', { class: 'opt' + (o.id === currentId ? ' on' : ''), onclick: () => { chosen = o.id; handle.close(); } },
+            h('span', null, o.name, o.desc ? h('small', { class: 'desc' }, o.desc) : null), h('small', null, o.sub != null ? o.sub : '#' + o.id));
+          // ⓘ sits next to the option (not inside it) so reading the details never selects anything
+          list.append(o.info ? h('div', { class: 'optrow' }, opt, infoButton(o.name, o.info)) : opt);
+        });
         if (res.length > limit) list.append(h('button', { class: 'btn', style: 'width:100%;margin-top:8px', onclick: () => { limit += PAGE; render(); } }, t('show_more', { n: res.length - limit })));
         if (!res.length) list.append(h('p', { class: 'empty' }, t('no_results_for', { q: search.value.trim() })));
       };
@@ -234,6 +238,46 @@
     });
   }
   const withUnknown = (list, id, prefix) => list.some((x) => x.id === id) ? list : list.concat([{ id, name: (id === 0 ? 'Blank' : (prefix || 'Unknown')) + ' (' + id + ')' }]);
+
+  // ---------------------------------------------------------------- skill info
+  const SKILL_INFO = window.P4G_SKILL_INFO || {};
+  const SKILL_ELEMS = { phy: 'Phys', fir: 'Fire', ice: 'Ice', ele: 'Elec', win: 'Wind', lig: 'Light', dar: 'Dark', alm: 'Almighty',
+    ail: 'Ailment', rec: 'Recovery', sup: 'Support', spe: 'Special', pas: 'Passive' };
+  const skillElem = (s) => SKILL_ELEMS[s.e] || s.e;
+  /** One-line description, e.g. "Fire · 4 SP · 1 foe · √40 pwr". Empty when there is no data. */
+  function skillSummary(id) {
+    const s = SKILL_INFO[id];
+    return s ? [skillElem(s), s.c, s.e === 'pas' ? '' : s.t, s.d].filter(Boolean).join(' · ') : '';
+  }
+  function showSkillInfo(id) {
+    const s = SKILL_INFO[id];
+    if (!s) return;
+    const line = (label, value) => value ? row(label, h('span', null, value)) : null;
+    const how = (lv) => lv === 0 ? t('sk_innate') : typeof lv === 'number' ? 'Lv ' + lv : t('sk_special', { code: lv });
+    openSheet(DB.allSkills[id], h('div', null,
+      line(t('sk_elem'), skillElem(s)), line(t('sk_cost'), s.c || (s.e === 'pas' ? t('sk_passive') : '')),
+      line(t('sk_target'), s.e === 'pas' ? '' : s.t), line(t('sk_effect'), s.d || t('sk_no_effect')),
+      line(t('sk_card'), s.k),
+      h('p', { class: 'hint', style: 'margin:14px 0 4px;color:var(--accent)' }, t('sk_learned')),
+      s.l ? s.l.map(([name, lv]) => h('div', { class: 'learn' }, h('span', null, name), h('small', null, how(lv))))
+        : h('p', { class: 'hint' }, t('sk_learned_none')),
+      h('p', { class: 'hint', style: 'margin-top:14px' }, t('sk_source'))), { full: true });
+  }
+  function infoButton(name, open) {
+    return h('button', { class: 'infobtn', type: 'button', 'aria-label': t('sk_info', { name }), onclick: open }, 'ⓘ');
+  }
+  const skillOptions = () => CAT.skills.map((o) => SKILL_INFO[o.id]
+    ? Object.assign({ desc: skillSummary(o.id), info: () => showSkillInfo(o.id) }, o) : o);
+
+  /** Skill selector with a summary line and an ⓘ button for the chosen skill. */
+  function skillField(options, get, set, title) {
+    const desc = h('p', { class: 'skilldesc' });
+    const info = infoButton(title, () => showSkillInfo(get()));
+    const paint = () => { desc.textContent = skillSummary(get()); desc.hidden = !desc.textContent; info.disabled = !SKILL_INFO[get()]; info.setAttribute('aria-label', t('sk_info', { name: DB.allSkills[get()] || title })); };
+    const sel = selectField(options, get, (id) => { set(id); paint(); }, title);
+    paint();
+    return h('div', null, row(title, h('div', { class: 'skillpick' }, sel, info)), desc);
+  }
 
   /** A tappable "select" that opens the picker. */
   function selectField(options, getId, setId, title) {
@@ -316,8 +360,9 @@
       [['ST', 'st'], ['MA', 'ma'], ['DE', 'de'], ['AG', 'ag'], ['LU', 'lu']].forEach(([lbl, k]) =>
         el.append(slider(lbl, () => p[k], (v) => { p[k] = v; }, 0, 255)));
       el.append(h('p', { class: 'hint' }, t('skill')));
+      const options = skillOptions();
       for (let i = 0; i < 8; i++) {
-        el.append(row(t('skill_n', { n: i + 1 }), selectField(CAT.skills, () => p.skills[i], (id) => { p.skills[i] = id; }, t('skill_n', { n: i + 1 }))));
+        el.append(skillField(options, () => p.skills[i], (id) => { p.skills[i] = id; }, t('skill_n', { n: i + 1 })));
       }
       el.append(h('div', { class: 'toolbar', style: 'margin-top:10px;flex-wrap:wrap' },
         h('button', { class: 'btn small', onclick: () => copyPersona(p) }, t('copy_to')),

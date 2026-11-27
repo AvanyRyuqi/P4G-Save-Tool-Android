@@ -195,7 +195,7 @@
 
   /** Full-screen searchable list. Resolves with the chosen id, or undefined.
    *  Search: every word must match the name (any order) or the id, e.g. "agi lv", "mara", "#134". */
-  function pick(title, options, currentId) {
+  function pick(title, options, currentId, opts) {
     return new Promise((resolve) => {
       const PAGE = 100;
       let chosen, limit = PAGE, handle;
@@ -203,13 +203,27 @@
       const count = h('small', { class: 'hint', style: 'display:block;margin:2px 2px 0' });
       const search = h('input', { type: 'text', placeholder: t('search_ph'), autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false', enterkeyhint: 'search' });
       const clear = h('button', { class: 'clearbtn', type: 'button', 'aria-label': t('clear_search'), hidden: true, onclick: () => { search.value = ''; limit = PAGE; render(); search.focus(); } }, '✕');
-      const bar = h('div', { class: 'searchbar' }, h('div', { class: 'searchwrap' }, search, clear), count);
+      // skill lists get element / target filters
+      const filtered = !!(opts && opts.skillFilters) || options.some((o) => o.info);
+      const filter = { e: '', t: '' };
+      const filterRow = (key, values, allLabel) => {
+        const box = h('div', { class: 'chips filters' });
+        const paintChips = () => box.replaceChildren(...[''].concat(values).map((v) => h('button', { class: 'chip' + (filter[key] === v ? ' on' : ''), type: 'button',
+          onclick: () => { filter[key] = v; limit = PAGE; paintChips(); render(); } }, v === '' ? allLabel : (key === 'e' ? SKILL_ELEMS[v] : v))));
+        paintChips();
+        return box;
+      };
+      const present = (key) => { const have = new Set(options.map((o) => (SKILL_INFO[o.id] || {})[key]).filter(Boolean)); return key === 'e' ? Object.keys(SKILL_ELEMS).filter((v) => have.has(v)) : [...have].sort(); };
+      const passes = (o) => !filtered || ((!filter.e || (SKILL_INFO[o.id] || {}).e === filter.e) && (!filter.t || (SKILL_INFO[o.id] || {}).t === filter.t));
+      const bar = h('div', { class: 'searchbar' }, h('div', { class: 'searchwrap' }, search, clear),
+        filtered ? [filterRow('e', present('e'), t('flt_elem')), filterRow('t', present('t'), t('flt_target'))] : null, count);
       const lower = options.map((o) => o.name.toLowerCase());
       const matches = () => {
         const tokens = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-        if (!tokens.length) return options;
+        if (!tokens.length) return options.filter(passes);
         const hit = [];
         options.forEach((o, i) => {
+          if (!passes(o)) return;
           const n = lower[i], id = String(o.id);
           if (tokens.every((w) => n.includes(w) || id === w.replace(/^#/, '') || (/^#?\d+$/.test(w) && id.startsWith(w.replace(/^#/, ''))))) hit.push([n.startsWith(tokens[0]) ? 0 : 1, i]);
         });
@@ -218,7 +232,7 @@
       const render = () => {
         const res = matches();
         clear.hidden = !search.value;
-        count.textContent = search.value.trim() ? t('n_results', { n: res.length }) : t('n_options', { n: options.length });
+        count.textContent = search.value.trim() || filter.e || filter.t ? t('n_results', { n: res.length }) : t('n_options', { n: options.length });
         list.replaceChildren();
         res.slice(0, limit).forEach((o) => {
           const opt = h('button', { class: 'opt' + (o.id === currentId ? ' on' : ''), onclick: () => { chosen = o.id; handle.close(); } },
@@ -227,14 +241,14 @@
           list.append(o.info ? h('div', { class: 'optrow' }, opt, infoButton(o.name, o.info)) : opt);
         });
         if (res.length > limit) list.append(h('button', { class: 'btn', style: 'width:100%;margin-top:8px', onclick: () => { limit += PAGE; render(); } }, t('show_more', { n: res.length - limit })));
-        if (!res.length) list.append(h('p', { class: 'empty' }, t('no_results_for', { q: search.value.trim() })));
+        if (!res.length) list.append(h('p', { class: 'empty' }, search.value.trim() ? t('no_results_for', { q: search.value.trim() }) : t('no_results')));
       };
       search.addEventListener('input', () => { limit = PAGE; render(); });
       handle = openSheet(title, h('div', null, bar, list), { full: true, onClose: () => resolve(chosen) });
       render();
       const cur = list.querySelector('.opt.on');
       if (cur) cur.scrollIntoView({ block: 'center' });
-      if (options.length > 12) setTimeout(() => search.focus(), 50); // open the keyboard right away for long lists
+      if (options.length > 12 && !filtered) setTimeout(() => search.focus(), 50); // open the keyboard right away for long lists
     });
   }
   const withUnknown = (list, id, prefix) => list.some((x) => x.id === id) ? list : list.concat([{ id, name: (id === 0 ? 'Blank' : (prefix || 'Unknown')) + ' (' + id + ')' }]);
@@ -261,6 +275,7 @@
       h('p', { class: 'hint', style: 'margin:14px 0 4px;color:var(--accent)' }, t('sk_learned')),
       s.l ? s.l.map(([name, lv]) => h('div', { class: 'learn' }, h('span', null, name), h('small', null, how(lv))))
         : h('p', { class: 'hint' }, t('sk_learned_none')),
+      h('button', { class: 'btn', style: 'width:100%;margin-top:12px', onclick: () => personaUI.compareSkills(id) }, t('cmp_with')),
       h('p', { class: 'hint', style: 'margin-top:14px' }, t('sk_source'))), { full: true });
   }
   function infoButton(name, open) {
@@ -270,11 +285,11 @@
     ? Object.assign({ desc: skillSummary(o.id), info: () => showSkillInfo(o.id) }, o) : o);
 
   /** Skill selector with a summary line and an ⓘ button for the chosen skill. */
-  function skillField(options, get, set, title) {
+  function skillField(options, get, set, title, onChange) {
     const desc = h('p', { class: 'skilldesc' });
     const info = infoButton(title, () => showSkillInfo(get()));
     const paint = () => { desc.textContent = skillSummary(get()); desc.hidden = !desc.textContent; info.disabled = !SKILL_INFO[get()]; info.setAttribute('aria-label', t('sk_info', { name: DB.allSkills[get()] || title })); };
-    const sel = selectField(options, get, (id) => { set(id); paint(); }, title);
+    const sel = selectField(options, get, (id) => { set(id); paint(); if (onChange) onChange(); }, title);
     paint();
     return h('div', null, row(title, h('div', { class: 'skillpick' }, sel, info)), desc);
   }
@@ -335,6 +350,17 @@
   const row = (label, ctl, hint) => h('div', { class: 'row' }, h('label', null, label), h('div', { class: 'grow' }, ctl));
   const card = (title, ...kids) => h('div', { class: 'card' }, title ? h('h3', null, title) : null, kids);
 
+  // --------------------------------------------------------- persona knowledge
+  const ENGINE = P4GPersona.create(window.P4G_PERSONA_DATA, SKILL_INFO);
+  let personaUI = null;
+  function initPersonaUI() {
+    personaUI = window.P4GPersonaUI({
+      t, h, row, DB, CAT, engine: ENGINE, elements: P4GPersona.ELEMENTS, openSheet, confirmDialog, pick, toast, personaName, memberName, protagName,
+      state: () => S, xpForLevel: P4G.xpForLevel, skillInfo: SKILL_INFO, skillElem, skillSummary, skillOptions,
+      changed: () => { markDirty(); commitSnap(); },
+    });
+  }
+
   // --------------------------------------------------------- persona editor
   function personaEditor(p, opts) {
     const el = h('div');
@@ -361,9 +387,14 @@
         el.append(slider(lbl, () => p[k], (v) => { p[k] = v; }, 0, 255)));
       el.append(h('p', { class: 'hint' }, t('skill')));
       const options = skillOptions();
+      const warns = h('div');
+      const paintWarns = () => warns.replaceChildren(...personaUI.buildWarnings(p).map((w) => h('p', { class: 'buildwarn ' + w.kind }, w.text)));
       for (let i = 0; i < 8; i++) {
-        el.append(skillField(options, () => p.skills[i], (id) => { p.skills[i] = id; }, t('skill_n', { n: i + 1 })));
+        el.append(skillField(options, () => p.skills[i], (id) => { p.skills[i] = id; }, t('skill_n', { n: i + 1 }), paintWarns));
       }
+      paintWarns();
+      el.append(warns);
+      if (ENGINE.get(p.id)) el.append(h('button', { class: 'btn accent', style: 'width:100%;margin-top:6px', onclick: () => personaUI.applyDefaults(p, refresh) }, t('def_button')));
       el.append(h('div', { class: 'toolbar', style: 'margin-top:10px;flex-wrap:wrap' },
         h('button', { class: 'btn small', onclick: () => copyPersona(p) }, t('copy_to')),
         h('button', { class: 'btn small', onclick: () => { p.skills = [0, 0, 0, 0, 0, 0, 0, 0]; markDirty(); refresh(); } }, t('clear_skills')),
@@ -603,12 +634,21 @@
       renderList(); openEditor(pe);
     } }, t('add'));
     const fill = h('button', { class: 'btn', onclick: async () => {
-      const lv = await promptNumber(t('comp_fill_q'), t('comp_fill_hint'), 99, 1, 99, t('go'));
+      const mode = await pick(t('comp_fill_all'), [{ id: 1, name: t('fill_real'), sub: '' }, { id: 2, name: t('fill_uniform'), sub: '' }]);
+      if (mode === undefined) return;
+      const lv = mode === 2 ? await promptNumber(t('comp_fill_q'), t('comp_fill_hint'), 99, 1, 99, t('go')) : 0;
       if (lv === undefined) return;
       let n = 0;
       for (let id = 1; id <= P4G.COMPENDIUM_COUNT; id++) {
         if (!DB.personae[id] || DB.personae[id] === 'Blank' || S.compendium.some((c) => c.id === id)) continue;
-        const pe = P4G.newPersona(id); pe.level = lv; pe.totalxp = P4G.xpForLevel(lv);
+        const pe = P4G.newPersona(id);
+        if (mode === 2) { pe.level = lv; pe.totalxp = P4G.xpForLevel(lv); }
+        else {
+          const real = personaUI.realData(id);
+          const info = ENGINE.get(id);
+          if (!real || info.p) continue; // no data, or a party Persona (never in the Compendium)
+          Object.assign(pe, real);
+        }
         S.compendium.push(pe); n++;
       }
       if (!n) { toast(t('comp_fill_none')); return; }
@@ -1001,6 +1041,8 @@
     let handle;
     const opt = (label, fn) => h('button', { class: 'opt', onclick: () => { handle.close(); fn(); } }, h('span', null, label));
     handle = openSheet(t('tools'), h('div', null,
+      opt(t('fusion'), () => personaUI.fusion()), opt(t('planner'), () => personaUI.planner()), opt(t('team'), () => personaUI.team()),
+      opt(t('cmp_title'), () => personaUI.compareSkills()),
       opt(t('doctor'), showDoctor), opt(t('goals'), showGoals), opt(t('timeline'), showTimeline),
       opt(t('sandbox'), showSandbox), opt(t('transfer'), showTransfer), opt(t('hex'), showHex)));
   }
@@ -1443,5 +1485,6 @@
   };
   window.__p4g = { get state() { return S; }, loadBytes, currentBytes }; // debug / testing hook
 
+  initPersonaUI();
   build();
 })();

@@ -148,7 +148,7 @@ test('i18n: both languages have identical keys/placeholders and app.js only uses
   assert.deepStrictEqual(Object.keys(id).sort(), Object.keys(en).sort());
   const ph = (s) => (s.match(/\{\w+\}/g) || []).sort().join();
   for (const k of Object.keys(id)) assert.strictEqual(ph(id[k]), ph(en[k]), 'placeholders differ: ' + k);
-  const app = fs.readFileSync(path.join(__dirname, '../app/src/main/assets/www/app.js'), 'utf8');
+  const app = ['app.js', 'persona-ui.js'].map((f) => fs.readFileSync(path.join(__dirname, '../app/src/main/assets/www', f), 'utf8')).join('\n');
   const used = new Set([...app.matchAll(/\bt\('([a-z_0-9]+)'[,)]/g)].map((m) => m[1]));
   ['tab_stats', 'tab_inv', 'tab_social', 'tab_comp', 'tab_other'].forEach((k) => used.add(k)); // used via TABS
   for (const k of used) assert.ok(k in en, 'missing i18n key: ' + k);
@@ -255,4 +255,65 @@ test('skill info covers every selectable skill and matches by id', () => {
   assert.deepStrictEqual(selectable.filter((s) => norm(info[s.id].n) !== s.name).map((s) => s.id), []);
   assert.deepStrictEqual([info[1].c, info[1].d, info[120].c], ['4 SP', '√40 pwr', '6% HP']);
   assert.ok(Object.values(info).every((v) => !/\$\d/.test(v.d || '')));
+});
+
+// ---- persona knowledge and fusion ----------------------------------------------------------
+function engine() {
+  const win = {};
+  for (const f of ['skill-info.js', 'persona-data.js']) new Function('window', fs.readFileSync(path.join(__dirname, '../app/src/main/assets/www', f), 'utf8'))(win);
+  const core = require('../app/src/main/assets/www/persona-core.js');
+  return { E: core.create(win.P4G_PERSONA_DATA, win.P4G_SKILL_INFO), core, data: win.P4G_PERSONA_DATA };
+}
+const pid = (name) => { const i = db.personae.indexOf(name); assert.ok(i > 0, name); return i; };
+const sid = (name) => { const i = db.allSkills.indexOf(name); assert.ok(i > 0, name); return i; };
+
+test('persona defaults: base level, stats and starting skills only', () => {
+  const { E, data } = engine();
+  const d = E.defaults(pid('Alice'));
+  assert.deepStrictEqual([d.level, d.st, d.ma, d.de, d.ag, d.lu], [72, 39, 56, 33, 45, 44]);
+  assert.deepStrictEqual(d.skills, [sid('Mamudoon'), sid('Mudo Boost'), sid('Dekunda'), 0, 0, 0, 0, 0]);
+  assert.strictEqual(E.defaults(60000), null);
+  for (const id of Object.keys(data.personas)) { const x = E.defaults(Number(id)); assert.ok(x.level >= 1 && x.level <= 99 && x.skills.length === 8, id); }
+});
+
+test('build check and planner', () => {
+  const { E } = engine();
+  const r = E.checkBuild(pid('Alice'), [sid('Dekunda'), sid('Dekunda'), sid('Agi'), 0, 0]);
+  assert.deepStrictEqual(r, { duplicate: [sid('Dekunda')], foreign: [sid('Agi')] });
+  const plan = E.plan([sid('Victory Cry'), sid('Mind Charge')]);
+  assert.strictEqual(plan[0].id, pid('Izanagi-no-Okami'));
+  assert.strictEqual(plan[0].matches.length, 2);
+  assert.deepStrictEqual(E.plan([]), []);
+});
+
+test('resistances include passive skills and evolved party forms', () => {
+  const { E } = engine();
+  const pixie = E.affinities(pid('Pixie'), []);
+  assert.deepStrictEqual(pixie.slice(0, 5), ['-', 'w', '-', '-', 's']); // weak to Fire, resists Wind
+  assert.strictEqual(E.affinities(pid('Pixie'), [sid('Null Fire')])[1], 'n');
+  assert.strictEqual(E.affinities(pid('Pixie'), [sid('Resist Fire'), sid('Absorb Fire')])[1], 'd');
+  assert.strictEqual(E.affinities(pid('Susano-O'), [])[3], 'w');
+  assert.strictEqual(E.affinities(0, []), null);
+  const fire = E.teamReport([{ id: pid('Pixie'), skills: [] }, { id: pid('Pixie'), skills: [sid('Null Fire')] }, { id: 0, skills: [] }])[1];
+  assert.deepStrictEqual(fire, { name: 'Fire', weak: 1, safe: 1 });
+});
+
+test('fusion: symmetric, never returns an ingredient, respects special recipes', () => {
+  const { E, data } = engine();
+  const ids = Object.keys(data.personas).map(Number);
+  for (const a of ids) for (const b of ids) {
+    const r = E.fuse(a, b);
+    assert.strictEqual(r, E.fuse(b, a));
+    if (r) assert.ok(r !== a && r !== b && !data.personas[a].p && !data.personas[b].p && !data.personas[r].p, a + '+' + b);
+    // a special Persona comes out of a pair only through its own two-Persona recipe
+    if (r && E.isSpecial(r)) assert.deepStrictEqual(data.special[r].slice().sort(), [a, b].sort());
+  }
+  assert.strictEqual(E.fuse(pid('Nebiros'), pid('Belial')), pid('Alice'));
+  assert.deepStrictEqual(E.recipesFor(pid('Alice'), new Set()).map((r) => r.ingredients), [[pid('Belial'), pid('Nebiros')]]);
+  assert.strictEqual(E.recipesFor(pid('Yoshitsune'), new Set())[0].ingredients.length, 5);
+  const owned = new Set([pid('Nebiros')]);
+  assert.deepStrictEqual(E.recipesFor(pid('Alice'), owned)[0].missing, [pid('Belial')]);
+  owned.add(pid('Belial'));
+  assert.ok(E.craftable(owned).some((x) => x.id === pid('Alice')));
+  assert.deepStrictEqual(E.craftable(new Set()), []);
 });

@@ -24,6 +24,19 @@ Data tersimpan offline di `skill-info.js`, dibuat dari [aqiu384/megaten-fusion-t
 (Unlicense) dengan `python tools/gen_skill_info.py <folder-clone>`. Teks efek berbahasa Inggris seperti data game lainnya.
 "Syarat khusus (kode)" adalah kode asli dari sumber untuk skill anggota party yang tidak didapat lewat level biasa.
 
+## Asisten Persona
+
+* **Isi data asli** (editor Persona): level dasar, ST/MA/DE/AG/LU, dan skill awal, dengan pratinjau dan bisa di-undo. XP dihitung dari
+  rumus level. "Isi semua" di Compendium juga bisa memakai data asli (hanya menambah yang belum terdaftar).
+* **Filter skill** per elemen dan target, **peringatan build** (skill ganda / tidak tercatat dipelajari, tanpa memblokir), dan
+  **Bandingkan skill**.
+* Menu ⋮ ▸ Alat lanjutan: **Kalkulator fusion** (cari resep, yang bisa dibuat sekarang, gabungkan dua), **Perancang build**, dan
+  **Analisis kelemahan tim** (resistansi dasar + skill pasif; equipment tidak dihitung).
+
+Data ada di `persona-data.js` (dari generator yang sama dengan info skill). Aturan fusion adalah port dari megaten-fusion-tool:
+hanya fusion dua Persona dan resep spesial; triple fusion biasa dan pewarisan skill tidak dihitung. Dua penyesuaian terhadap sumber:
+hasil fusion tidak pernah sama dengan salah satu bahan, dan salah ketik "Hang" di tabel arcana dibaca "Hanged".
+
 ## Baca folder save langsung
 
 Di layar awal tekan **Buka folder save**. Aplikasi mencari `data*.bin` (beserta `.binslot`) di folder
@@ -143,7 +156,7 @@ Not included: Steam/PC save support (format not verified).
 - **Search save** (⋮) – items, Personas, skills held by Personas, social links; tap a result to jump to it.
 - **Compare with another save**, **Save summary**, **Share** (.bin/.binslot/Persona text) and **saved Persona builds**.
 
-Not included (needs data/samples I do not have): default skills per Persona, fusion helper, story-flag editor, Steam/PC saves.
+Default skills and the fusion helper have since been added (see "Asisten Persona"). Still not included: story-flag editor, Steam/PC saves.
 
 ### Update: advanced tools (⋮ → Advanced tools)
 - **Save doctor** – scans for corrupt/inconsistent data (bad Persona flags, unknown IDs, duplicate links/party, unfit equipment…) with one-tap fixes.

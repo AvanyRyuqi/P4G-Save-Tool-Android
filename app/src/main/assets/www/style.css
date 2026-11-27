@@ -142,6 +142,32 @@ a { color: var(--accent); }
 .learn { display: flex; justify-content: space-between; gap: 8px; padding: 7px 2px; border-bottom: 1px solid var(--line); }
 .learn small { color: var(--muted); }
 
+/* persona tools */
+.chips.filters { padding: 8px 12px 0; margin-bottom: 0; }
+.filters .chip { min-height: 34px; padding: 4px 12px; font-size: calc(13px * var(--fz, 1)); }
+.subhead { margin: 14px 0 6px; color: var(--accent); font-size: calc(13px * var(--fz, 1)); font-weight: 700; }
+.entry { display: block; width: 100%; text-align: left; background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; margin-bottom: 8px; }
+.entry.tap { cursor: pointer; }
+.entry b { display: block; }
+.entry small { display: block; color: var(--muted); font-size: calc(12px * var(--fz, 1)); margin-top: 3px; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tag { font-size: calc(11px * var(--fz, 1)); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; color: var(--muted); }
+.tag.ok { color: var(--ok); border-color: var(--ok); }
+.tag.bad { color: var(--danger); border-color: var(--danger); }
+.buildwarn { font-size: calc(12px * var(--fz, 1)); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 6px 0; color: var(--muted); }
+.buildwarn.bad { color: var(--danger); border-color: var(--danger); }
+.check { display: flex; align-items: center; gap: 6px; min-height: 40px; }
+.tablewrap { overflow-x: auto; }
+table.cmp, table.aff { width: 100%; border-collapse: collapse; font-size: calc(13px * var(--fz, 1)); }
+table.cmp td, table.cmp th, table.aff td, table.aff th { border: 1px solid var(--line); padding: 6px 4px; vertical-align: top; text-align: left; }
+table.cmp td:first-child { color: var(--muted); }
+table.cmp td.diff { color: var(--accent); }
+table.aff th, table.aff td:not(:first-child) { text-align: center; font-size: calc(11px * var(--fz, 1)); }
+table.aff small { display: block; color: var(--muted); font-size: calc(10px * var(--fz, 1)); }
+.a-w { color: var(--danger); font-weight: 700; }
+.a-s, .a-n, .a-r, .a-d { color: var(--ok); font-weight: 700; }
+.a-x { color: var(--muted); }
+
 /* review dialog, textarea */
 .dialog.wide { width: calc(100% - 32px); max-width: 480px; }
 .changes { max-height: 38vh; overflow-y: auto; font-size: calc(13px * var(--fz, 1)); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--surface-2); }

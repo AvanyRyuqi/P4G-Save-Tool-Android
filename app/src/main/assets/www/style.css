@@ -161,3 +161,31 @@ label, .lbl, h3 { -webkit-user-select: none; user-select: none; -webkit-touch-ca
 .hx .b { display: inline-block; width: 1.7em; text-align: center; }
 .hx .b.chg { background: var(--accent); color: var(--accent-ink); border-radius: 3px; }
 .hx .asc { margin-left: 8px; color: var(--muted); }
+
+/* element affinities */
+.affbox { margin: 8px 0 10px; }
+.affbox[hidden] { display: none; }
+.aff { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 3px; text-align: center; }
+.aff small { display: block; color: var(--muted); font-size: calc(10px * var(--fz, 1)); overflow: hidden; }
+.ac { display: block; background: var(--surface-2); border-radius: 6px; padding: 4px 0; text-align: center; font-size: calc(12px * var(--fz, 1)); }
+.ac.a-w { background: var(--danger); color: #fff; font-weight: 700; }
+.ac.a-s, .ac.a-n, .ac.a-r, .ac.a-d { color: var(--ok); font-weight: 700; }
+.ac.a-none, .ac.a-half { color: var(--muted); }
+table.team { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 3px; }
+.team th { font-size: calc(12px * var(--fz, 1)); text-align: center; overflow: hidden; text-overflow: ellipsis; }
+.team th small { display: block; font-weight: 400; color: var(--muted); font-size: calc(10px * var(--fz, 1)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team tr > th:first-child { text-align: left; width: 62px; }
+.team tr > :last-child { width: 46px; }
+.team td.ac { display: table-cell; }
+.team tr.risk > th:first-child, .team tr.risk > td:last-child { color: var(--danger); }
+
+/* fusion calculator */
+.recipe { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
+.ing { flex: 1 1 0; min-width: 88px; min-height: 44px; text-align: left; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; cursor: pointer; }
+.ing b { display: block; font-weight: 600; font-size: calc(13px * var(--fz, 1)); overflow-wrap: anywhere; }
+.ing small { color: var(--muted); font-size: calc(11px * var(--fz, 1)); }
+.ing.have { border-color: var(--ok); }
+.miss { flex-basis: 100%; color: var(--muted); font-size: calc(11px * var(--fz, 1)); }
+.miss.ok { color: var(--ok); }
+.check { display: flex; align-items: center; gap: 8px; min-height: 40px; margin-top: 6px; }
+.check input { width: 20px; height: 20px; accent-color: var(--accent); }

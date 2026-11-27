@@ -256,3 +256,94 @@ test('skill info covers every selectable skill and matches by id', () => {
   assert.deepStrictEqual([info[1].c, info[1].d, info[120].c], ['4 SP', '√40 pwr', '6% HP']);
   assert.ok(Object.values(info).every((v) => !/\$\d/.test(v.d || '')));
 });
+
+// ------------------------------------------------------------ Persona data, affinities, fusion
+function personaKit() {
+  const www = path.join(__dirname, '../app/src/main/assets/www/');
+  const win = {};
+  for (const f of ['db.js', 'persona-data.js']) new Function('window', fs.readFileSync(www + f, 'utf8'))(win);
+  const full = win.P4G_DB, data = win.P4G_PERSONA_DATA;
+  const PK = require(www + 'p4g-persona.js').create(data, full, P4G.xpForLevel);
+  const pid = (n) => { const i = full.personae.lastIndexOf(n); assert.ok(i > 0, 'Persona ' + n); return i; };
+  const sid = (n) => { const i = full.allSkills.indexOf(n); assert.ok(i > 0, 'skill ' + n); return i; };
+  return { PK, data, full, pid, sid };
+}
+
+test('Persona data covers the selectable Personas and uses known skill ids', () => {
+  const { data, full } = personaKit();
+  const noData = P4G.buildCatalog(db).personae.filter((x) => x.id !== 0 && !data.personas[x.id]).map((x) => x.name);
+  // placeholders and enemy-only entries the source does not describe
+  assert.deepStrictEqual(noData.filter((n) => !/^(Black Izanami|Okami)$/.test(n) && /^[A-Za-z]/.test(n)), []);
+  for (const d of Object.values(data.personas)) {
+    assert.match(d.x, /^[w\-Ssnrd]{8}$/);
+    if (d.k) { assert.strictEqual(d.s.length, 5); for (const [s] of d.k) assert.ok(full.allSkills[s], 'skill id ' + s); }
+  }
+});
+
+test('default level, stats and skills follow the requested level', () => {
+  const { PK, pid, sid } = personaKit();
+  const base = PK.defaults(pid('Izanagi'));
+  assert.deepStrictEqual([base.level, base.totalxp, base.st, base.ma, base.de, base.ag, base.lu], [1, 0, 3, 2, 2, 3, 2]);
+  assert.deepStrictEqual(base.skills, [sid('Zio'), sid('Cleave'), sid('Rakukaja'), 0, 0, 0, 0, 0]);
+  assert.deepStrictEqual(PK.defaults(pid('Izanagi'), 5).skills.slice(3, 6), [sid('Rakunda'), sid('Tarukaja'), 0]);
+  // never below the base level
+  assert.strictEqual(PK.defaults(pid('Magatsu-Izanagi'), 1).level, 77);
+  // only the latest eight skills fit
+  const late = PK.defaults(pid('Jiraiya'), 99);
+  assert.strictEqual(late.skills.length, 8); assert.ok(!late.skills.includes(sid('Garu'))); assert.strictEqual(late.skills[7], sid('Wind Amp'));
+  // evolved party Personas and unknown ids have no defaults and are left alone
+  const p = P4G.newPersona(pid('Susano-O'));
+  assert.strictEqual(PK.applyDefaults(p, p.id), false);
+  assert.deepStrictEqual(p, P4G.newPersona(pid('Susano-O')));
+});
+
+test('defaults survive a save round trip', () => {
+  const { PK, pid } = personaKit();
+  const orig = fakeSave(), s = P4G.parse(orig);
+  assert.ok(PK.applyDefaults(s.mcSlots[3], pid('Pixie')));
+  const again = P4G.parse(P4G.serialize(s, orig)).mcSlots[3];
+  assert.deepStrictEqual(again, s.mcSlots[3]);
+});
+
+test('affinities combine base data with passive skills', () => {
+  const { PK, pid, sid } = personaKit();
+  const codes = (c) => c.map((x) => x.code).join('');
+  assert.strictEqual(codes(PK.affinities(pid('Izanagi'), [])), '---swSn-');
+  assert.strictEqual(codes(PK.affinities(pid('Izanagi'), [sid('Null Wind'), sid('Resist Dark'), sid('Absorb Fire')])), '-d-snSn-');
+  assert.strictEqual(codes(PK.affinities(pid('Susano-O'), [])), '-s-wn---');
+  assert.strictEqual(PK.affinities(60000, []), null);
+  const sum = PK.teamSummary([PK.affinities(pid('Izanagi'), []), PK.affinities(pid('Jiraiya'), []), null]);
+  assert.deepStrictEqual(sum[4], { elem: 'win', weak: 1, guard: 1 });
+  assert.deepStrictEqual(sum[3], { elem: 'ele', weak: 1, guard: 1 });
+});
+
+test('fusion recipes: special, two and three Persona', () => {
+  const { PK, data, pid } = personaKit();
+  assert.deepStrictEqual(PK.recipes(pid('Alice'), { triple: true }), { special: [pid('Belial'), pid('Nebiros')], pairs: [], triples: [] });
+  assert.strictEqual(PK.recipes(pid('Jiraiya')), null);
+  assert.strictEqual(PK.recipes(206), null);
+  const races = data.chart.races, idx = (id) => races.indexOf(data.personas[id].r);
+  const specialPairs = new Set(Object.values(data.special).filter((v) => v.length === 2).map((v) => v.slice().sort().join()));
+  let total = 0;
+  for (const target of PK.targets()) {
+    const r = PK.recipes(target);
+    total += r.pairs.length;
+    for (const [a, b] of r.pairs) {
+      assert.ok(a && b && a !== b && a !== target && b !== target, 'ingredients of ' + target);
+      assert.ok(!specialPairs.has([a, b].sort().join()), 'special pair offered for ' + target);
+      assert.strictEqual(PK.fusePair(b, a), target);
+      // two different arcana must give the result's arcana in the chart (upper triangle)
+      const i = Math.min(idx(a), idx(b)), j = Math.max(idx(a), idx(b));
+      if (i !== j) assert.strictEqual(data.chart.table[i][j], data.personas[target].r);
+      else assert.strictEqual(data.personas[a].r, data.personas[target].r);
+    }
+  }
+  assert.ok(total > 19000, 'two-Persona recipes: ' + total);
+  // a result equal to an ingredient moves up to the next Persona of that arcana
+  assert.strictEqual(PK.fusePair(pid('Ares'), pid('Gurr')), pid('Triglav'));
+  assert.strictEqual(PK.fusePair(pid('Rangda'), pid('Barong')), pid('Shiva'));
+  const t = PK.recipes(pid('Pixie'), { triple: true });
+  assert.ok(t.triples.every((x) => new Set(x).size === 3 && !x.includes(pid('Pixie'))));
+  const ranked = PK.rank([[pid('Pixie'), pid('Izanagi')], [pid('Alice'), pid('Belial')]], new Set([pid('Alice'), pid('Belial')]));
+  assert.deepStrictEqual(ranked.map((x) => x.missing), [0, 2]);
+});

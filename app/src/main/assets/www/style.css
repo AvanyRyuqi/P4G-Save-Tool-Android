@@ -61,8 +61,8 @@ input[type=text]:focus { outline: 2px solid var(--accent); }
 input[type=range] { width: 100%; accent-color: var(--accent); height: 32px; }
 .sliderrow { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
 .sliderrow .lbl { flex: 0 0 34px; }
-.sliderrow .val { flex: 0 0 38px; text-align: right; font-variant-numeric: tabular-nums; }
-.sliderrow .val.warn { color: var(--danger); font-weight: 700; }
+.sliderrow input.num { flex: 0 0 68px; width: 68px; min-height: 40px; padding: 4px 8px; font-variant-numeric: tabular-nums; }
+.sliderrow input.num.warn, .sv.warn { color: var(--danger); font-weight: 700; }
 .btn { min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); padding: 0 14px; cursor: pointer; }
 .btn.accent { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
 .btn.danger { color: var(--danger); }

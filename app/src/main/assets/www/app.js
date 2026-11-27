@@ -169,12 +169,30 @@
     return inp;
   }
   function slider(label, get, set, min, max, warnOver) {
-    const val = h('span', { class: 'val' }, String(get()));
-    const r = h('input', { type: 'range', min, max, step: 1, value: get() });
-    const paint = () => { val.textContent = r.value; val.classList.toggle('warn', warnOver != null && +r.value > warnOver); };
-    r.addEventListener('input', () => { set(+r.value); markDirty(); paint(); });
-    paint();
-    return h('div', { class: 'sliderrow' }, h('span', { class: 'lbl' }, label), r, val);
+    const num = h('input', { type: 'text', inputmode: 'numeric', pattern: '[0-9]*', class: 'num sv', value: String(get()), 'aria-label': label });
+    const r = h('input', { type: 'range', min, max, step: 1, value: clamp(get(), min, max) });
+    const paint = (v) => { num.classList.toggle('warn', warnOver != null && v > warnOver); };
+    const commit = (v) => { set(v); markDirty(); paint(v); };
+    r.addEventListener('input', () => { num.value = r.value; commit(+r.value); });
+    num.addEventListener('focus', () => num.select());
+    // live-commit while typing, but only for complete in-range values
+    num.addEventListener('input', () => {
+      const digits = num.value.replace(/\D/g, '');
+      if (digits !== num.value) num.value = digits;
+      if (digits === '') return;
+      const n = parseInt(digits, 10);
+      if (n >= min && n <= max) { r.value = n; commit(n); }
+    });
+    // on blur/enter: clamp & normalize
+    num.addEventListener('change', () => {
+      const n = parseInt(num.value, 10);
+      const v = clamp(Number.isFinite(n) ? n : get(), min, max);
+      num.value = String(v); r.value = v;
+      if (v !== get()) commit(v); else paint(v);
+    });
+    num.addEventListener('keydown', (e) => { if (e.key === 'Enter') num.blur(); });
+    paint(get());
+    return h('div', { class: 'sliderrow' }, h('span', { class: 'lbl' }, label), r, num);
   }
   const row = (label, ctl, hint) => h('div', { class: 'row' }, h('label', null, label), h('div', { class: 'grow' }, ctl));
   const card = (title, ...kids) => h('div', { class: 'card' }, title ? h('h3', null, title) : null, kids);
@@ -392,8 +410,12 @@
   function otherTab() {
     const phases = DB.phases.map((n, i) => ({ id: i, name: n }));
     const nameInput = (key) => {
-      const i = h('input', { type: 'text', maxlength: 9, value: S[key], autocomplete: 'off' });
-      i.addEventListener('input', () => { S[key] = i.value.slice(0, 9); markDirty(); });
+      const i = h('input', { type: 'text', value: S[key], autocomplete: 'off' });
+      i.addEventListener('input', () => {
+        const clean = i.value.replace(/[^\x21-\x7e]/g, '').slice(0, 9);
+        if (clean !== i.value) i.value = clean;
+        S[key] = clean; markDirty();
+      });
       return i;
     };
     return h('div', null,

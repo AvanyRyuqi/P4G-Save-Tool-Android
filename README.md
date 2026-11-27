@@ -108,3 +108,6 @@ Semua offset dan format data identik dengan aslinya. Beberapa perilaku yang beri
 
 P4G Save Tool asli: Fennec-kun dengan bantuan TGE, Shrinefox, dan Pan dari [Amicitia](http://s15.zetaboards.com/Amicitia/index/).
 Dimungkinkan oleh [HENkaku](https://henkaku.xyz). Lisensi MIT, lihat `LICENSE.txt`.
+
+### Update: manual level entry
+Level (protagonist and every Persona) and ST/MA/DE/AG/LU now have a numeric box next to the slider — type the number directly (values clamp to the valid range). Hero name fields only accept printable ASCII, as the game requires.

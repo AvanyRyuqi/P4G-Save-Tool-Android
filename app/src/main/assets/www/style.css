@@ -130,6 +130,18 @@ a { color: var(--accent); }
 .clearbtn { position: absolute; right: 2px; top: 2px; width: 40px; height: 40px; border: 0; background: none; color: var(--muted); font-size: calc(16px * var(--fz, 1)); cursor: pointer; }
 .clearbtn[hidden] { display: none; }
 
+/* skill info */
+.optrow { display: flex; align-items: stretch; border-bottom: 1px solid var(--line); }
+.optrow .opt { flex: 1; min-width: 0; border-bottom: 0; }
+.opt .desc { display: block; font-weight: 400; font-size: calc(12px * var(--fz, 1)); margin-top: 2px; }
+.infobtn { flex: 0 0 44px; min-height: 44px; border: 0; background: none; color: var(--accent); font-size: calc(19px * var(--fz, 1)); cursor: pointer; }
+.infobtn:disabled { opacity: .25; }
+.skillpick { display: flex; align-items: center; gap: 4px; }
+.skillpick .select { flex: 1; min-width: 0; }
+.skilldesc { color: var(--muted); font-size: calc(12px * var(--fz, 1)); margin: -4px 48px 10px 106px; }
+.learn { display: flex; justify-content: space-between; gap: 8px; padding: 7px 2px; border-bottom: 1px solid var(--line); }
+.learn small { color: var(--muted); }
+
 /* review dialog, textarea */
 .dialog.wide { width: calc(100% - 32px); max-width: 480px; }
 .changes { max-height: 38vh; overflow-y: auto; font-size: calc(13px * var(--fz, 1)); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--surface-2); }

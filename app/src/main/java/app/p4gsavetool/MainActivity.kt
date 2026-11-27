@@ -289,6 +289,34 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread { createBinLauncher.launch(suggestedName) }
         }
 
+        /** JSON array of {name,size,modified} for every backup copy, newest first. */
+        @JavascriptInterface
+        fun listBackups(): String {
+            val arr = JSONArray()
+            try {
+                backupDir().listFiles()
+                    ?.filter { it.isFile && it.name.endsWith(".bak") }
+                    ?.sortedByDescending { it.lastModified() }
+                    ?.take(300)
+                    ?.forEach { arr.put(JSONObject().put("name", it.name).put("size", it.length()).put("modified", it.lastModified())) }
+            } catch (ignored: Exception) {
+                // an unreadable backup folder just shows as empty
+            }
+            return arr.toString()
+        }
+
+        /** Base64 of one backup file, or "" when it does not exist / the name is not a plain file name. */
+        @JavascriptInterface
+        fun readBackup(name: String): String {
+            if (name.contains('/') || name.contains('\\') || name.contains("..")) return ""
+            return try {
+                val f = File(backupDir(), name)
+                if (f.isFile) Base64.encodeToString(f.readBytes(), Base64.NO_WRAP) else ""
+            } catch (ignored: Exception) {
+                ""
+            }
+        }
+
         @JavascriptInterface
         fun exitApp() {
             runOnUiThread { finish() }
@@ -435,10 +463,12 @@ class MainActivity : AppCompatActivity() {
         out.use { it.write(data); it.flush() }
     }
 
+    private fun backupDir(): File = File(getExternalFilesDir(null) ?: filesDir, "backups")
+
     /** Keeps copies of the files exactly as first opened, once per opened save. */
     private fun backupOnce() {
         if (backedUp) return
-        val dir = File(getExternalFilesDir(null) ?: filesDir, "backups").apply { mkdirs() }
+        val dir = backupDir().apply { mkdirs() }
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
         binOriginal?.let { File(dir, "$binName-$stamp.bak").writeBytes(it) }
         slotOriginal?.let { File(dir, "$slotName-$stamp.bak").writeBytes(it) }

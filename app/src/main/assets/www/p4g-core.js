@@ -397,10 +397,29 @@
     };
   }
 
+  /** Sanity checks before saving. Returns [{code, n}] - n = how many entries are affected. */
+  function validate(s) {
+    const out = [];
+    const add = (code, n) => { if (n > 0) out.push({ code, n }); };
+    const personas = [].concat(s.mcSlots, s.memberPersona.slice(1), s.compendium).filter((p) => p && p.id !== 0);
+    add('mc_level_over_99', s.mcLevel > 99 ? 1 : 0);
+    add('mc_level_zero', s.mcLevel < 1 ? 1 : 0);
+    add('persona_level_over_99', personas.filter((p) => p.level > 99).length);
+    add('persona_level_zero', personas.filter((p) => p.level < 1).length);
+    add('stat_over_99', personas.filter((p) => [p.st, p.ma, p.de, p.ag, p.lu].some((v) => v > 99)).length);
+    add('item_over_99', s.inventory.filter((c) => c > 99).length);
+    add('yen_over_max', s.yen > 9999999 ? 1 : 0);
+    add('link_level_range', s.socialLinks.filter((l) => l.level < 1 || l.level > 10).length);
+    const pm = s.party.filter((x) => x !== 0);
+    add('party_duplicate', pm.length !== new Set(pm).size ? 1 : 0);
+    add('name_empty', (s.firstname.trim() === '' && s.surname.trim() === '') ? 1 : 0);
+    return out;
+  }
+
   return {
     OFF, INVENTORY_SIZE, MIN_FILE_SIZE, COMPENDIUM_COUNT,
     parse, serialize, buildCatalog, md5, isBinslot, patchBinslot, newPersona, blankPersona,
-    pointsToLevel, levelToPoints, xpForLevel,
+    pointsToLevel, levelToPoints, xpForLevel, validate,
     _internal: { readPString, writePString, writeJString, readPersona, writePersona },
   };
 });

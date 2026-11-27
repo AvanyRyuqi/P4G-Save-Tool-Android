@@ -150,3 +150,11 @@ test('i18n: both languages have identical keys/placeholders and app.js only uses
   // error codes thrown by the core / sent by Kotlin need an err_* text
   for (const c of ['too_small', 'not_binslot', 'open_fail', 'save_fail', 'slot_save_fail', 'slot_not_saved', 'invalid_data', 'perm_denied', 'scan_fail']) assert.ok(('err_' + c) in en, c);
 });
+
+test('validate: flags risky values and is quiet for sane saves', () => {
+  const s = P4G.parse(fakeSave());
+  assert.deepStrictEqual(P4G.validate(s), []);
+  s.mcLevel = 150; s.yen = 99999999; s.inventory[5] = 200; s.mcSlots[0].level = 120; s.party = [2, 2, 3]; s.firstname = ''; s.surname = '';
+  const codes = P4G.validate(s).map((w) => w.code);
+  for (const c of ['mc_level_over_99', 'yen_over_max', 'item_over_99', 'persona_level_over_99', 'party_duplicate', 'name_empty']) assert.ok(codes.includes(c), c);
+});

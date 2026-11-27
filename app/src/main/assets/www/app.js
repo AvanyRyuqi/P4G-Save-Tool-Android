@@ -59,8 +59,56 @@
   const protagName = () => (S && (S.firstname + ' ' + S.surname).trim()) || 'Protagonist';
   const memberName = (i) => i === 0 ? protagName() : DB.party[i];
 
+  // ---- preferences (theme, text size, auto XP)
+  const pref = (k, d) => { try { return localStorage.getItem(k) || d; } catch (e) { return d; } };
+  const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } };
+  const autoXp = () => pref('p4g-autoxp', '0') === '1';
+  function applyDisplay() {
+    let th = pref('p4g-theme', 'dark');
+    if (th === 'auto') th = (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', th);
+    document.documentElement.style.setProperty('--fz', { small: '0.9', normal: '1', large: '1.2' }[pref('p4g-fs', 'normal')] || '1');
+  }
+  applyDisplay();
+
+  // ---- undo / redo history (snapshots of the parsed save, committed shortly after the last edit)
+  function deepClone(o) {
+    if (o == null || typeof o !== 'object') return o;
+    if (Array.isArray(o)) return o.map(deepClone);
+    const r = {}; for (const k in o) r[k] = deepClone(o[k]);
+    return r;
+  }
+  const sigOf = (o) => JSON.stringify(o);
+  let hist = [], histSig = [], hi = -1, snapTimer = null, savedSig = null, base = null;
+  function resetHistory() {
+    clearTimeout(snapTimer); snapTimer = null;
+    hist = [deepClone(S)]; histSig = [sigOf(S)]; hi = 0; savedSig = histSig[0]; base = deepClone(S);
+  }
+  function commitSnap() {
+    clearTimeout(snapTimer); snapTimer = null;
+    if (!S) return;
+    const sg = sigOf(S);
+    if (sg === histSig[hi]) return;
+    hist.length = hi + 1; histSig.length = hi + 1;
+    hist.push(deepClone(S)); histSig.push(sg);
+    if (hist.length > 80) { hist.shift(); histSig.shift(); }
+    hi = hist.length - 1;
+    dirty = sg !== savedSig; updateTopbar();
+  }
   function markDirty() {
-    if (!dirty) { dirty = true; updateTopbar(); }
+    dirty = true; updateTopbar();
+    clearTimeout(snapTimer); snapTimer = setTimeout(commitSnap, 400);
+  }
+  function gotoHist(i) {
+    hi = i; S = deepClone(hist[hi]);
+    dirty = histSig[hi] !== savedSig; updateTopbar(); render();
+  }
+  function undo() { commitSnap(); if (hi <= 0) return toast(t('nothing_undo')); gotoHist(hi - 1); toast(t('undone')); }
+  function redo() { commitSnap(); if (hi >= hist.length - 1) return toast(t('nothing_redo')); gotoHist(hi + 1); toast(t('redone')); }
+  async function discardChanges() {
+    commitSnap();
+    if (!(await confirmDialog(t('reset_q'), t('reset_btn'), true))) return;
+    S = deepClone(base); commitSnap(); gotoHist(hi); toast(t('reset_done'));
   }
   function toast(msg, err) {
     document.querySelectorAll('.toast').forEach((el) => el.remove());
@@ -94,6 +142,24 @@
         h('div', { class: 'btns' },
           h('button', { class: 'btn', onclick: () => done(false) }, t('cancel')),
           h('button', { class: 'btn ' + (danger ? 'danger' : 'accent'), onclick: () => done(true) }, okLabel || t('ok')))));
+      modals.push(entry);
+      document.body.append(scrim);
+    });
+  }
+
+  function promptNumber(message, hint, def, min, max, okLabel) {
+    return new Promise((resolve) => {
+      const scrim = h('div', { class: 'scrim center' });
+      const entry = { close: () => done(undefined) };
+      const done = (v) => { const i = modals.indexOf(entry); if (i >= 0) modals.splice(i, 1); scrim.remove(); resolve(v); };
+      const inp = h('input', { type: 'text', inputmode: 'numeric', pattern: '[0-9]*', value: String(def), class: 'num', style: 'max-width:none;margin-bottom:10px' });
+      const go = () => { const n = parseInt(inp.value, 10); done(clamp(Number.isFinite(n) ? n : def, min, max)); };
+      inp.addEventListener('focus', () => inp.select());
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); });
+      scrim.append(h('div', { class: 'dialog' }, h('p', null, message), inp, hint ? h('p', { class: 'hint', style: 'margin-top:0' }, hint) : null,
+        h('div', { class: 'btns' },
+          h('button', { class: 'btn', onclick: () => done(undefined) }, t('cancel')),
+          h('button', { class: 'btn accent', onclick: go }, okLabel || t('ok')))));
       modals.push(entry);
       document.body.append(scrim);
     });
@@ -200,28 +266,84 @@
   // --------------------------------------------------------- persona editor
   function personaEditor(p, opts) {
     const el = h('div');
-    if (opts.idPicker) {
-      el.append(row(t('persona'), selectField(CAT.personae, () => p.id, (id) => {
-        p.id = id;
-        if (p.level === 0 && id !== 0 && !p.exists) p.level = 1;
-        p.exists = id !== 0;
-        opts.onIdChange && opts.onIdChange();
-      }, t('persona'))));
+    const refresh = () => { el.replaceChildren(); build(); };
+    function build() {
+      if (opts.idPicker) {
+        el.append(row(t('persona'), selectField(CAT.personae, () => p.id, (id) => {
+          p.id = id;
+          if (p.level === 0 && id !== 0 && !p.exists) p.level = 1;
+          p.exists = id !== 0;
+          opts.onIdChange && opts.onIdChange();
+        }, t('persona'))));
+      }
+      let xpInput = null;
+      el.append(slider('Lv', () => p.level, (v) => {
+        p.level = v;
+        if (autoXp()) { p.totalxp = P4G.xpForLevel(v); if (xpInput) xpInput.value = String(p.totalxp); }
+      }, 1, 255, 99));
+      xpInput = numField(() => p.totalxp, (v) => { p.totalxp = v; }, 0, 4294967295);
+      xpInput.style.maxWidth = 'none';
+      el.append(h('div', { class: 'row' }, h('label', null, t('total_xp')), h('div', { class: 'grow' }, xpInput),
+        h('button', { class: 'btn small', onclick: () => { p.totalxp = P4G.xpForLevel(p.level); xpInput.value = String(p.totalxp); markDirty(); } }, t('from_level'))));
+      [['ST', 'st'], ['MA', 'ma'], ['DE', 'de'], ['AG', 'ag'], ['LU', 'lu']].forEach(([lbl, k]) =>
+        el.append(slider(lbl, () => p[k], (v) => { p[k] = v; }, 0, 255)));
+      el.append(h('p', { class: 'hint' }, t('skill')));
+      for (let i = 0; i < 8; i++) {
+        el.append(row(t('skill_n', { n: i + 1 }), selectField(CAT.skills, () => p.skills[i], (id) => { p.skills[i] = id; }, t('skill_n', { n: i + 1 }))));
+      }
+      el.append(h('div', { class: 'toolbar', style: 'margin-top:10px;flex-wrap:wrap' },
+        h('button', { class: 'btn small', onclick: () => copyPersona(p) }, t('copy_to')),
+        h('button', { class: 'btn small', onclick: () => { p.skills = [0, 0, 0, 0, 0, 0, 0, 0]; markDirty(); refresh(); } }, t('clear_skills')),
+        h('button', { class: 'btn small', onclick: () => personaExchange(p, opts, refresh) }, t('export_import'))));
     }
-    const lvWrap = h('div');
-    lvWrap.append(slider('Lv', () => p.level, (v) => { p.level = v; }, 1, 255, 99));
-    el.append(lvWrap);
-    const xpInput = numField(() => p.totalxp, (v) => { p.totalxp = v; }, 0, 4294967295);
-    xpInput.style.maxWidth = 'none';
-    el.append(h('div', { class: 'row' }, h('label', null, t('total_xp')), h('div', { class: 'grow' }, xpInput),
-      h('button', { class: 'btn small', onclick: () => { p.totalxp = P4G.xpForLevel(p.level); xpInput.value = String(p.totalxp); markDirty(); } }, t('from_level'))));
-    [['ST', 'st'], ['MA', 'ma'], ['DE', 'de'], ['AG', 'ag'], ['LU', 'lu']].forEach(([lbl, k]) =>
-      el.append(slider(lbl, () => p[k], (v) => { p[k] = v; }, 0, 255)));
-    el.append(h('p', { class: 'hint' }, t('skill')));
-    for (let i = 0; i < 8; i++) {
-      el.append(row(t('skill_n', { n: i + 1 }), selectField(CAT.skills, () => p.skills[i], (id) => { p.skills[i] = id; }, t('skill_n', { n: i + 1 }))));
-    }
+    build();
     return el;
+  }
+
+  /** Every place a Persona can be copied to: protagonist slots and party members. */
+  async function copyPersona(src) {
+    const targets = [];
+    S.mcSlots.forEach((p, i) => { if (p !== src) targets.push({ id: i, name: t('slot_n', { n: i + 1 }) + ' – ' + protagName(), sub: p.id ? personaName(p.id) + ' Lv ' + p.level : 'Blank', obj: p }); });
+    for (let i = 1; i < S.memberPersona.length; i++) {
+      const p = S.memberPersona[i];
+      if (p && p !== src) targets.push({ id: 100 + i, name: memberName(i), sub: p.id ? personaName(p.id) + ' Lv ' + p.level : 'Blank', obj: p });
+    }
+    const id = await pick(t('copy_title'), targets);
+    if (id === undefined) return;
+    const target = targets.find((x) => x.id === id);
+    if (target.obj.id !== 0 && !(await confirmDialog(t('copy_overwrite_q', { name: target.name + ' (' + personaName(target.obj.id) + ')' }), t('ok'), true))) return;
+    Object.assign(target.obj, deepClone(src));
+    markDirty(); commitSnap(); render(); toast(t('copied_to'));
+  }
+
+  /** Text export / import of a single Persona (copy & paste friendly, no files needed). */
+  function personaExchange(p, opts, refresh) {
+    const dump = () => JSON.stringify({ p4g: 1, id: p.id, level: p.level, totalxp: p.totalxp, skills: p.skills, st: p.st, ma: p.ma, de: p.de, ag: p.ag, lu: p.lu });
+    const ta = h('textarea', { rows: 9, spellcheck: 'false', autocapitalize: 'none', class: 'ta' });
+    ta.value = dump();
+    const copy = async () => {
+      ta.focus(); ta.select();
+      let ok = false;
+      try { await navigator.clipboard.writeText(ta.value); ok = true; } catch (e) { try { ok = document.execCommand('copy'); } catch (e2) { /* manual copy */ } }
+      if (ok) toast(t('ei_copied'));
+    };
+    const inRange = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi;
+    const apply = () => {
+      let o;
+      try { o = JSON.parse(ta.value); } catch (e) { o = null; }
+      const ok = o && typeof o === 'object' && inRange(o.id, 0, 65535) && inRange(o.level, 0, 255) && inRange(o.totalxp, 0, 4294967295)
+        && Array.isArray(o.skills) && o.skills.length === 8 && o.skills.every((x) => inRange(x, 0, 65535))
+        && ['st', 'ma', 'de', 'ag', 'lu'].every((k) => inRange(o[k], 0, 255));
+      if (!ok) { toast(t('ei_bad'), true); return; }
+      if (opts.idPicker) { p.id = o.id; p.exists = o.id !== 0; }
+      p.level = o.level; p.totalxp = o.totalxp; p.skills = o.skills.slice();
+      ['st', 'ma', 'de', 'ag', 'lu'].forEach((k) => { p[k] = o[k]; });
+      markDirty(); commitSnap(); handle.close(); refresh(); if (opts.onIdChange) opts.onIdChange(); toast(t('ei_applied'));
+    };
+    const handle = openSheet(t('ei_title'), h('div', null, h('p', { class: 'hint', style: 'margin-top:0' }, t('ei_hint')), ta,
+      h('div', { class: 'toolbar', style: 'margin-top:10px' },
+        h('button', { class: 'btn', onclick: copy }, t('ei_copy')),
+        h('button', { class: 'btn accent', onclick: apply }, t('ei_apply')))));
   }
 
   // ------------------------------------------------------------------- tabs
@@ -235,14 +357,15 @@
     wrap.append(chips);
 
     if (memberIdx === 0) {
+      const mcXpInput = numField(() => S.mcXp, (v) => { S.mcXp = v; }, 0, 4294967295);
       wrap.append(card(t('protagonist'),
         row(t('yen'), numField(() => S.yen, (v) => { S.yen = v; }, 0, 4294967295)),
-        slider('Lv', () => S.mcLevel, (v) => { S.mcLevel = v; }, 1, 255, 99),
-        (() => {
-          const xp = numField(() => S.mcXp, (v) => { S.mcXp = v; }, 0, 4294967295);
-          return h('div', { class: 'row' }, h('label', null, t('total_xp')), h('div', { class: 'grow' }, xp),
-            h('button', { class: 'btn small', onclick: () => { S.mcXp = P4G.xpForLevel(S.mcLevel); xp.value = String(S.mcXp); markDirty(); } }, t('from_level')));
-        })()));
+        slider('Lv', () => S.mcLevel, (v) => {
+          S.mcLevel = v;
+          if (autoXp()) { S.mcXp = P4G.xpForLevel(v); mcXpInput.value = String(S.mcXp); }
+        }, 1, 255, 99),
+        h('div', { class: 'row' }, h('label', null, t('total_xp')), h('div', { class: 'grow' }, mcXpInput),
+          h('button', { class: 'btn small', onclick: () => { S.mcXp = P4G.xpForLevel(S.mcLevel); mcXpInput.value = String(S.mcXp); markDirty(); } }, t('from_level')))));
     }
 
     // persona
@@ -383,11 +506,23 @@
       }
       renderList(); openEditor(pe);
     } }, t('add'));
+    const fill = h('button', { class: 'btn', onclick: async () => {
+      const lv = await promptNumber(t('comp_fill_q'), t('comp_fill_hint'), 99, 1, 99, t('go'));
+      if (lv === undefined) return;
+      let n = 0;
+      for (let id = 1; id <= P4G.COMPENDIUM_COUNT; id++) {
+        if (!DB.personae[id] || DB.personae[id] === 'Blank' || S.compendium.some((c) => c.id === id)) continue;
+        const pe = P4G.newPersona(id); pe.level = lv; pe.totalxp = P4G.xpForLevel(lv);
+        S.compendium.push(pe); n++;
+      }
+      if (!n) { toast(t('comp_fill_none')); return; }
+      S.compendium.sort((a, b) => a.id - b.id); markDirty(); commitSnap(); renderList(); toast(t('comp_filled', { n }));
+    } }, t('comp_fill_all'));
     const clear = h('button', { class: 'btn danger', onclick: async () => {
       if (!S.compendium.length) return;
       if (await confirmDialog(t('comp_delete_all_q', { n: S.compendium.length }), t('delete_all'), true)) { S.compendium = []; markDirty(); renderList(); }
     } }, t('delete_all'));
-    wrap.append(h('div', { class: 'toolbar' }, search), h('div', { class: 'toolbar' }, add, clear), listEl);
+    wrap.append(h('div', { class: 'toolbar' }, search), h('div', { class: 'toolbar' }, add, fill, clear), listEl);
     function renderList() {
       listEl.replaceChildren();
       const q = compFilter.trim().toLowerCase();
@@ -440,7 +575,7 @@
 
   function updateTopbar() {
     if (!titleSub) return;
-    titleSub.textContent = S ? (fileName || 'save') + (slotBytes ? ' + binslot' : '') + (dirty ? t('unsaved') : '') : t('no_file');
+    titleSub.textContent = S ? (fileName || 'save') + ' · ' + (slotBytes ? t('fmt_switch') + ' + binslot' : t('fmt_bin')) + (dirty ? t('unsaved') : '') : t('no_file');
     titleSub.classList.toggle('dirty', !!(S && dirty));
     saveBtn.disabled = !S;
   }
@@ -463,9 +598,15 @@
   let menuEl = null;
   function toggleMenu() {
     if (menuEl) { menuEl.remove(); menuEl = null; return; }
+    const m = (fn, label) => h('button', { onclick: () => { toggleMenu(); fn(); } }, label);
     menuEl = h('div', { class: 'menu' },
+      S ? m(undo, t('undo')) : null, S ? m(redo, t('redo')) : null,
+      S && dirty ? m(discardChanges, t('reset_changes')) : null,
+      S ? m(showPresets, t('presets')) : null,
+      bridge && bridge.listBackups ? m(showBackups, t('backups')) : null,
       h('button', { onclick: () => { toggleMenu(); doSaveAs(); } }, t('save_as')),
       hasFolderAccess() ? h('button', { onclick: () => { toggleMenu(); openSaveFolder(); } }, t('open_folder')) : null,
+      m(showSettings, t('settings')),
       h('button', { onclick: () => { toggleMenu(); showLanguage(); } }, t('language')),
       h('button', { onclick: () => { toggleMenu(); showAbout(); } }, t('about')));
     document.body.append(menuEl);
@@ -502,22 +643,170 @@
         h('span', null, STR[code].lang_name), h('small', null, code === lang ? '✓' : '')))));
   }
 
+  // ------------------------------------------------- review / presets / backups / settings
+  function diffLines(a, b) {
+    const L = [];
+    const ch = (k, x, y) => L.push(t(k) + ': ' + x + ' → ' + y);
+    if (a.yen !== b.yen) ch('d_yen', a.yen, b.yen);
+    if (a.mcLevel !== b.mcLevel) ch('d_level', a.mcLevel, b.mcLevel);
+    if (a.mcXp !== b.mcXp) ch('d_xp', a.mcXp, b.mcXp);
+    const nm = (x) => (x.firstname + ' ' + x.surname).trim();
+    if (nm(a) !== nm(b)) ch('d_name', nm(a), nm(b));
+    if (a.day !== b.day) ch('d_day', a.day, b.day);
+    if (a.dayPhase !== b.dayPhase) ch('d_phase', DB.phases[a.dayPhase], DB.phases[b.dayPhase]);
+    if (a.nextDay !== b.nextDay) ch('d_next', a.nextDay, b.nextDay);
+    if (a.nextDayPhase !== b.nextDayPhase) L.push(t('d_next') + ': ' + DB.phases[a.nextDayPhase] + ' → ' + DB.phases[b.nextDayPhase]);
+    CAT.statNames.forEach((n, st) => {
+      if (a.socialStats[st] !== b.socialStats[st]) L.push(t('d_stat') + ' ' + n + ': Lv ' + P4G.pointsToLevel(st, a.socialStats[st]) + ' (' + a.socialStats[st] + ') → Lv ' + P4G.pointsToLevel(st, b.socialStats[st]) + ' (' + b.socialStats[st] + ')');
+    });
+    for (let i = 0; i < 3; i++) if (a.party[i] !== b.party[i]) L.push(t('d_party') + ' ' + (i + 1) + ': ' + nameOf(CAT.partyChoices, a.party[i]) + ' → ' + nameOf(CAT.partyChoices, b.party[i]));
+    for (let m = 0; m < 8; m++) {
+      if (m === 4) continue;
+      const eq = CAT.members[m].equipId;
+      [['weapon', CAT.weaponsByMember[eq]], ['armor', CAT.armor], ['accessory', CAT.accessories], ['costume', CAT.costumes]].forEach(([k, list]) => {
+        const x = a.equip[k][eq], y = b.equip[k][eq];
+        if (x !== y) L.push(t('d_equip') + ' ' + memberName(m) + ' ' + t(k) + ': ' + nameOf(list || [], x) + ' → ' + nameOf(list || [], y));
+      });
+    }
+    for (let id = 0; id < b.inventory.length; id++) {
+      if (a.inventory[id] !== b.inventory[id] && id !== 1792) L.push(t('d_item') + ' ' + itemName(id) + ': ' + a.inventory[id] + ' → ' + b.inventory[id]);
+    }
+    const linkName = (id) => { const f = CAT.socialLinkIDs.find((x) => x.id === id); return f ? f.name : '#' + id; };
+    b.socialLinks.forEach((l) => {
+      const o = a.socialLinks.find((x) => x.id === l.id);
+      if (!o) L.push(t('d_link') + ' ' + linkName(l.id) + ': ' + t('d_added'));
+      else if (o.level !== l.level || o.progress !== l.progress) L.push(t('d_link') + ' ' + linkName(l.id) + ': Lv ' + o.level + '/' + o.progress + ' → Lv ' + l.level + '/' + l.progress);
+    });
+    a.socialLinks.forEach((l) => { if (!b.socialLinks.some((x) => x.id === l.id)) L.push(t('d_link') + ' ' + linkName(l.id) + ': ' + t('d_removed')); });
+    const pd = (p) => p.id === 0 ? 'Blank' : personaName(p.id) + ' Lv ' + p.level;
+    const pcmp = (label, x, y) => {
+      if (!x || !y || sigOf(x) === sigOf(y)) return;
+      if (x.id !== y.id || x.level !== y.level) L.push(label + ': ' + pd(x) + ' → ' + pd(y));
+      else L.push(label + ': ' + pd(y) + ' (' + t('d_changed') + ')');
+    };
+    a.mcSlots.forEach((p, i) => pcmp(t('d_persona') + ' ' + t('slot_n', { n: i + 1 }), p, b.mcSlots[i]));
+    for (let i = 1; i < a.memberPersona.length; i++) pcmp(t('d_persona') + ' ' + memberName(i), a.memberPersona[i], b.memberPersona[i]);
+    const ca = new Map(a.compendium.map((p) => [p.id, p])), cb = new Map(b.compendium.map((p) => [p.id, p]));
+    let add = 0, rem = 0, chg = 0;
+    cb.forEach((p, id) => { if (!ca.has(id)) add++; else if (sigOf(ca.get(id)) !== sigOf(p)) chg++; });
+    ca.forEach((p, id) => { if (!cb.has(id)) rem++; });
+    if (add) L.push(t('d_comp') + ': ' + add + ' ' + t('d_added'));
+    if (rem) L.push(t('d_comp') + ': ' + rem + ' ' + t('d_removed'));
+    if (chg) L.push(t('d_comp') + ': ' + chg + ' ' + t('d_changed'));
+    return L;
+  }
+
+  /** "Review changes" dialog shown before saving: change list + sanity warnings. Resolves true to proceed. */
+  function reviewDialog(message, okLabel) {
+    commitSnap();
+    const lines = base ? diffLines(base, S) : [];
+    const warns = P4G.validate(S);
+    const MAX = 60;
+    return new Promise((resolve) => {
+      const scrim = h('div', { class: 'scrim center' });
+      const entry = { close: () => done(false) };
+      const done = (v) => { const i = modals.indexOf(entry); if (i >= 0) modals.splice(i, 1); scrim.remove(); resolve(v); };
+      scrim.append(h('div', { class: 'dialog wide' },
+        h('h3', { style: 'margin:0 0 8px;font-size:16px' }, t('review_title')),
+        message ? h('p', null, message) : null,
+        warns.length ? h('div', { class: 'warnbox' }, h('b', null, '⚠ ' + t('warnings')), warns.map((w) => h('div', null, t('w_' + w.code, { n: w.n })))) : null,
+        h('div', { class: 'changes' }, lines.length ? lines.slice(0, MAX).map((x) => h('div', null, x)) : h('div', { class: 'hint' }, t('review_none')),
+          lines.length > MAX ? h('div', { class: 'hint' }, t('review_more', { n: lines.length - MAX })) : null),
+        h('div', { class: 'btns', style: 'margin-top:14px' },
+          h('button', { class: 'btn', onclick: () => done(false) }, t('cancel')),
+          h('button', { class: 'btn accent', onclick: () => done(true) }, okLabel || t('save')))));
+      modals.push(entry);
+      document.body.append(scrim);
+    });
+  }
+
+  function showPresets() {
+    let handle;
+    const run = (fn) => () => { handle.close(); fn(); markDirty(); commitSnap(); render(); toast(t('preset_done')); };
+    const opt = (label, fn) => h('button', { class: 'opt', onclick: fn }, h('span', null, label));
+    handle = openSheet(t('presets'), h('div', null,
+      opt(t('preset_yen'), run(() => { S.yen = 9999999; })),
+      opt(t('preset_mc99'), run(() => { S.mcLevel = 99; S.mcXp = P4G.xpForLevel(99); })),
+      opt(t('preset_stats'), run(() => { CAT.statNames.forEach((n, st) => { S.socialStats[st] = P4G.levelToPoints(st, 5); }); })),
+      opt(t('preset_links'), run(() => { S.socialLinks.forEach((l) => { l.level = 10; }); })),
+      opt(t('preset_items99'), run(() => { for (let id = 0; id < S.inventory.length; id++) if (S.inventory[id] > 0 && id !== 1792) S.inventory[id] = 99; })),
+      opt(t('preset_add_section'), async () => {
+        handle.close();
+        const si = await pick(t('pick_section'), CAT.sections.map((sec, i) => ({ id: i, name: sec.name, sub: String(sec.items.length) })));
+        if (si === undefined) return;
+        CAT.sections[si].items.forEach((it) => { if (it.name !== 'Blank' && it.id !== 1792) S.inventory[it.id] = 99; });
+        markDirty(); commitSnap(); render(); toast(t('preset_done'));
+      })));
+  }
+
+  function showBackups() {
+    if (!S) { toast(t('backups_need_file')); return; }
+    let arr = [];
+    try { arr = JSON.parse(bridge.listBackups() || '[]'); } catch (e) { arr = []; }
+    const mine = arr.filter((b) => b.name.startsWith(fileName + '-') && b.name.endsWith('.bak'));
+    const fmtStamp = (n) => { const m = /-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})\.bak$/.exec(n); return m ? m[1] + '-' + m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5] + ':' + m[6] : n; };
+    let handle;
+    const list = h('div', { class: 'list' });
+    mine.forEach((b) => list.append(h('div', { class: 'item tap', onclick: () => { handle.close(); restoreBackup(b); } },
+      h('div', { class: 'name' }, h('b', null, fmtStamp(b.name)), h('small', null, Math.round(b.size / 1024) + ' KB')), h('span', { class: 'hint' }, '›'))));
+    handle = openSheet(t('backups_title', { name: fileName }), mine.length ? list : h('p', { class: 'empty' }, t('backups_none')));
+  }
+  async function restoreBackup(b) {
+    if (!(await confirmDialog(t('restore_q'), t('restore_btn'), true))) return;
+    const b64 = bridge.readBackup(b.name);
+    if (!b64) { toast(t('restore_fail'), true); return; }
+    const stamp = b.name.slice(fileName.length + 1, -4);
+    let slot = null;
+    if (slotBytes) {
+      let sb = slotBytes;
+      const s64 = bridge.readBackup(slotName + '-' + stamp + '.bak');
+      if (s64) sb = fromB64(s64);
+      slot = { name: slotName, bytes: sb };
+    }
+    const keepBase = base, name = fileName;
+    if (!loadBytes(name, fromB64(b64), slot, true)) return;
+    base = keepBase || base; savedSig = null; dirty = true; updateTopbar();
+    toast(t('restored'));
+  }
+
+  function showSettings() {
+    const choice = (label, key, def, opts) => {
+      const box = h('div', { class: 'chips', style: 'margin-bottom:0' });
+      const paint = () => [...box.children].forEach((c, i) => c.classList.toggle('on', opts[i][0] === pref(key, def)));
+      opts.forEach(([val, name]) => box.append(h('button', { class: 'chip', onclick: () => { setPref(key, val); applyDisplay(); paint(); } }, name)));
+      paint();
+      return h('div', null, h('p', { class: 'hint' }, label), box);
+    };
+    const xpBtn = h('button', { class: 'chip', onclick: () => { setPref('p4g-autoxp', autoXp() ? '0' : '1'); paint(); } });
+    const paint = () => { xpBtn.textContent = autoXp() ? t('on') : t('off'); xpBtn.classList.toggle('on', autoXp()); };
+    paint();
+    openSheet(t('settings'), h('div', null,
+      choice(t('theme'), 'p4g-theme', 'dark', [['dark', t('theme_dark')], ['light', t('theme_light')], ['auto', t('theme_auto')]]),
+      choice(t('font_size'), 'p4g-fs', 'normal', [['small', t('fs_small')], ['normal', t('fs_normal')], ['large', t('fs_large')]]),
+      h('p', { class: 'hint' }, t('auto_xp')), h('div', { class: 'chips', style: 'margin-bottom:0' }, xpBtn), h('p', { class: 'hint' }, t('auto_xp_hint'))));
+  }
+
   // --------------------------------------------------------------- file I/O
   const toB64 = (u8) => { let s = ''; const CH = 0x8000; for (let i = 0; i < u8.length; i += CH) s += String.fromCharCode.apply(null, u8.subarray(i, i + CH)); return btoa(s); };
   const fromB64 = (b64) => { const s = atob(b64); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; };
 
-  function loadBytes(name, bytes, slot) {
+  function loadBytes(name, bytes, slot, silent) {
     try {
       const parsed = P4G.parse(bytes);
       if (slot && !P4G.isBinslot(slot.bytes)) throw new Error(t('not_binslot_named', { name: slot.name }));
       S = parsed; orig = bytes; fileName = name; dirty = false;
       slotBytes = slot ? slot.bytes : null; slotName = slot ? slot.name : '';
       memberIdx = 0; slotIdx = 0; invFilter = ''; compFilter = ''; tab = 'stats';
+      resetHistory();
       build();
-      toast(t('opened', { name: name + (slot ? ' + ' + slot.name : '') }));
-      if (!slot) setTimeout(() => toast(t('switch_pick_slot')), 2400);
+      if (!silent) {
+        toast(t('opened', { name: name + (slot ? ' + ' + slot.name : '') }));
+        if (!slot) setTimeout(() => toast(t('switch_pick_slot')), 2400);
+      }
+      return true;
     } catch (e) {
       toast(e.code ? t('err_' + e.code, e.args) : (e.message || String(e)), true);
+      return false;
     }
   }
   /** files: [{name, bytes}] - one .bin plus an optional .binslot, in any order. */
@@ -597,28 +886,29 @@
   }
   async function doSave() {
     if (!S) return;
-    if (!bridge) return doSaveAs();
     const names = fileName + (slotBytes ? ' ' + t('and') + ' ' + slotName : '');
-    if (!(await confirmDialog(t('overwrite_q', { names }), t('save')))) return;
+    if (!(await reviewDialog(bridge ? t('overwrite_q', { names }) : '', t('save')))) return;
+    if (!bridge) return doSaveAs(true);
     const out = currentBytes(), slot = currentSlot(out);
     pendingBytes = out; pendingSlot = slot;
     bridge.saveFile(toB64(out), slot ? toB64(slot) : '');
   }
-  function doSaveAs() {
+  async function doSaveAs(skipReview) {
     if (!S) return;
+    if (skipReview !== true && !(await reviewDialog('', t('save_as')))) return;
     const out = currentBytes(), slot = currentSlot(out);
     if (bridge) { pendingBytes = out; pendingSlot = slot; bridge.saveFileAs(fileName || 'save.bin', toB64(out), slotName, slot ? toB64(slot) : ''); }
     else {
       download(fileName || 'save.bin', out);
       if (slot) setTimeout(() => download(slotName, slot), 400);
-      orig = out; if (slot) slotBytes = slot; dirty = false; updateTopbar(); toast(t('downloaded'));
+      orig = out; if (slot) slotBytes = slot; commitSnap(); savedSig = sigOf(S); base = deepClone(S); dirty = false; updateTopbar(); toast(t('downloaded'));
     }
   }
   let pendingBytes = null, pendingSlot = null;
 
   // callbacks invoked by the Android host
   window.__onFilesOpened = (arr) => loadFiles(arr.map((f) => ({ name: f.name, bytes: fromB64(f.b64) })));
-  window.__onSaved = (name) => { if (pendingBytes) { orig = pendingBytes; pendingBytes = null; } if (pendingSlot) { slotBytes = pendingSlot; pendingSlot = null; } if (name) fileName = name; dirty = false; updateTopbar(); toast(t('saved', { name: fileName })); };
+  window.__onSaved = (name) => { if (pendingBytes) { orig = pendingBytes; pendingBytes = null; } if (pendingSlot) { slotBytes = pendingSlot; pendingSlot = null; } if (name) fileName = name; commitSnap(); savedSig = sigOf(S); base = deepClone(S); dirty = false; updateTopbar(); toast(t('saved', { name: fileName })); };
   window.__onError = (code, detail) => { pendingBytes = null; pendingSlot = null; toast(STR.en['err_' + code] ? t('err_' + code, { detail }) : code, true); };
   window.__back = () => {
     if (menuEl) { toggleMenu(); return 'handled'; }

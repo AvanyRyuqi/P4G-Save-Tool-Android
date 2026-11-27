@@ -111,3 +111,15 @@ Dimungkinkan oleh [HENkaku](https://henkaku.xyz). Lisensi MIT, lihat `LICENSE.tx
 
 ### Update: manual level entry
 Level (protagonist and every Persona) and ST/MA/DE/AG/LU now have a numeric box next to the slider — type the number directly (values clamp to the valid range). Hero name fields only accept printable ASCII, as the game requires.
+
+### Update: more tools
+- **Review before saving** – lists every change (old → new) and warns about risky values (level > 99, items > 99, Yen > 9,999,999, duplicate party members…).
+- **Undo / Redo / Discard changes** (⋮ menu).
+- **Quick presets** – max Yen, protagonist Lv 99, max social stats, all social links Lv 10, all owned items ×99, add a whole item section ×99.
+- **Backups** (⋮ menu) – browse the automatic backups of the open save and load one back into the editor.
+- **Persona tools** – copy a Persona to another slot/party member, clear skills, text export/import of a build.
+- **Compendium → Fill all** at a chosen level (new entries have empty skills/minimal stats).
+- **Auto XP sync** (optional), **light/dark/system theme** and **text size** under ⋮ → Display & settings.
+- The top bar shows whether a Switch `.binslot` is paired.
+
+Not included: Steam/PC save support (format not verified).

@@ -24,6 +24,12 @@ Data tersimpan offline di `skill-info.js`, dibuat dari [aqiu384/megaten-fusion-t
 (Unlicense) dengan `python tools/gen_skill_info.py <folder-clone>`. Teks efek berbahasa Inggris seperti data game lainnya.
 "Syarat khusus (kode)" adalah kode asli dari sumber untuk skill anggota party yang tidak didapat lewat level biasa.
 
+## Tema
+
+Tampilan bawaan **TV Kuning**: desain sendiri bergaya siaran TV tengah malam, tanpa aset dari game. Pilihan lain di
+**⋮ ▸ Tampilan & pengaturan**: Tengah Malam, Klasik gelap, Klasik terang, atau ikuti sistem. Gaya tema ada di
+`assets/www/theme.css`.
+
 ## Data Persona, elemen, dan fusion
 
 * **Persona baru langsung lengkap**: memilih Persona di slot kosong mengisi level dasar, XP, stat, dan skill bawaan.

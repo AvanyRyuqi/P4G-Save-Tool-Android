@@ -1,0 +1,128 @@
+/*
+ * "TV" skin: an original look inspired by yellow late-night television.
+ * Active when <html data-skin="tv">; the classic themes in style.css are left untouched.
+ * data-theme="tv"       yellow page, dark "screen" panels
+ * data-theme="midnight" the same shapes at night
+ */
+
+/* ---------------------------------------------------------------- colours */
+/* Yellow page: ink on yellow. "accent" is ink here so that primary controls stay visible. */
+:root[data-theme=tv] {
+  --bg: #ffd21a; --surface: #fff0a8; --surface-2: #fff6cc; --line: #6e5800; --text: #17130a; --muted: #4a3c00;
+  --accent: #17130a; --accent-ink: #ffd21a; --danger: #9c0f06; --ok: #07592a; color-scheme: light;
+}
+/* Dark panels on the yellow page get their own set; everything inside them follows. */
+:root[data-theme=tv] :is(.topbar, nav, .card, .item, .recipe, .sheet, .dialog, .menu) {
+  --surface: #1b160b; --surface-2: #2c2512; --line: #52461f; --text: #fff4cc; --muted: #cbb97c;
+  --accent: #ffd21a; --accent-ink: #17130a; --danger: #ff7a6b; --ok: #72e59c;
+  color: var(--text); color-scheme: dark;
+}
+:root[data-theme=midnight] {
+  --bg: #0b0e1d; --surface: #161b31; --surface-2: #222945; --line: #38426c; --text: #f5f1de; --muted: #abb1d0;
+  --accent: #ffd21a; --accent-ink: #17130a; --danger: #ff7a6b; --ok: #72e59c; color-scheme: dark;
+}
+
+:root[data-skin=tv] {
+  --radius: 4px;
+  /* system condensed face on Android; no font download, the app works offline */
+  --display: sans-serif-condensed, "Roboto Condensed", "Arial Narrow", Roboto, system-ui, sans-serif;
+  --bars: linear-gradient(90deg, #f4f1e4 0 14.3%, #ffd21a 0 28.6%, #2fd3d6 0 42.9%, #45cf62 0 57.2%,
+    #e25aa4 0 71.5%, #ef493d 0 85.8%, #4263e0 0);
+}
+/* faint scan lines on the page */
+[data-skin=tv] body { background: repeating-linear-gradient(0deg, rgba(0,0,0,.045) 0 1px, transparent 1px 4px), var(--bg); }
+
+[data-skin=tv] :is(.brand b, .card h3, .sheet header h4, .welcome h1, .chip, .btn, .iconbtn, nav button, .menu button, .toast) {
+  font-family: var(--display); font-stretch: condensed;
+}
+[data-skin=tv] :is(button, input, textarea):focus-visible { outline: 3px solid var(--text); outline-offset: 2px; }
+
+/* ---------------------------------------------------------------- top bar */
+[data-skin=tv] .topbar { position: relative; background: #17130a; border: 0; padding-bottom: 15px; }
+[data-theme=midnight] .topbar { background: #070914; }
+/* the one signature: a broadcast test-pattern strip */
+[data-skin=tv] .topbar::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: var(--bars); }
+[data-skin=tv] .brand b { color: #ffd21a; font-size: min(calc(21px * var(--fz, 1)), 5.6vw); font-weight: 900; font-style: italic; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 380px) { [data-skin=tv] .topbar { gap: 6px; } [data-skin=tv] .topbar .iconbtn { padding: 0 8px; } }
+
+/* ---------------------------------------------------------------- buttons */
+[data-skin=tv] :is(.btn, .iconbtn) { border-radius: 3px; border-width: 2px; font-weight: 700; font-size: calc(15px * var(--fz, 1)); }
+[data-skin=tv] .btn.small { font-size: calc(13px * var(--fz, 1)); }
+[data-skin=tv] :is(.btn.accent, .iconbtn.primary) { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-style: italic; font-weight: 900; }
+[data-skin=tv] .btn:active, [data-skin=tv] .iconbtn:active { transform: translateY(1px); }
+
+/* slanted shapes are drawn behind the label, so text and focus ring stay straight */
+[data-skin=tv] .chip { position: relative; z-index: 0; background: none; border: 0; border-radius: 0; margin: 0 3px; font-weight: 700; color: var(--text); }
+[data-skin=tv] .chip::before { content: ""; position: absolute; inset: 0; z-index: -1; transform: skewX(-12deg); background: var(--surface); border: 2px solid var(--line); }
+[data-skin=tv] .chip.on { background: none; color: var(--accent-ink); font-style: italic; font-weight: 900; }
+[data-skin=tv] .chip.on::before { background: var(--accent); border-color: var(--accent); }
+[data-skin=tv] .chips { gap: 4px; padding-top: 3px; }
+
+/* ---------------------------------------------------------------- fields */
+[data-skin=tv] :is(.select, input[type=text], input[type=number], textarea.ta) { border-radius: 3px; border-width: 2px; }
+[data-skin=tv] input::placeholder { color: var(--muted); opacity: 1; }
+[data-skin=tv] .stepper button { border-radius: 3px; }
+
+/* ---------------------------------------------------------------- panels */
+[data-skin=tv] .card { border: 0; border-radius: var(--radius); padding: 16px 14px 14px; }
+[data-skin=tv] :is(.item, .recipe) { border-radius: var(--radius); border-width: 0 0 0 5px; border-left-color: var(--accent); background: var(--surface); }
+[data-theme=tv] :is(.card, .item, .recipe) { box-shadow: 4px 4px 0 rgba(23,19,10,.28); }
+[data-theme=midnight] .card { border-top: 2px solid var(--line); }
+[data-skin=tv] .card h3 { position: relative; z-index: 0; display: inline-block; margin: 0 0 12px 3px; padding: 3px 14px 3px 10px;
+  color: var(--accent-ink); font-size: calc(17px * var(--fz, 1)); font-weight: 900; font-style: italic; letter-spacing: 0; text-transform: none; }
+[data-skin=tv] .card h3::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--accent); transform: skewX(-12deg); }
+
+/* ---------------------------------------------------------------- tabs */
+[data-skin=tv] nav { border: 0; padding-top: 4px; }
+[data-skin=tv] nav:empty { display: none; }
+[data-skin=tv] nav button { position: relative; z-index: 0; font-weight: 700; font-size: calc(12px * var(--fz, 1)); }
+[data-skin=tv] nav button.on { color: var(--accent-ink); font-style: italic; font-weight: 900; }
+[data-skin=tv] nav button.on::before { content: ""; position: absolute; inset: 2px 7px 4px; z-index: -1; background: var(--accent); transform: skewX(-10deg); }
+
+/* ---------------------------------------------------------------- sheets, dialogs, menu */
+[data-skin=tv] .sheet { border-radius: 8px 8px 0 0; }
+[data-skin=tv] .sheet header { position: relative; background: #ffd21a; border: 0; color: #17130a; border-radius: 8px 8px 0 0; padding-bottom: 16px; }
+[data-skin=tv] .sheet header::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: var(--bars); }
+[data-skin=tv] .sheet header h4 { font-size: calc(20px * var(--fz, 1)); font-weight: 900; font-style: italic; }
+[data-skin=tv] .sheet header .iconbtn { background: #17130a; border-color: #17130a; color: #ffd21a; }
+[data-skin=tv] .sheet .opt.on { font-weight: 900; }
+[data-skin=tv] .dialog { border: 3px solid var(--accent); border-radius: var(--radius); }
+[data-skin=tv] .menu { top: calc(72px + env(safe-area-inset-top)); max-width: calc(100% - 24px); max-height: 72vh; overflow-y: auto; border: 3px solid var(--accent); border-radius: var(--radius); background: var(--surface); }
+[data-skin=tv] .menu button { font-weight: 700; font-size: calc(16px * var(--fz, 1)); }
+[data-skin=tv] .toast { background: #17130a; color: #fff4cc; border: 2px solid #ffd21a; border-radius: 3px; font-weight: 700; }
+[data-skin=tv] .toast.err { background: #9c0f06; color: #fff; border-color: #fff; }
+
+/* ---------------------------------------------------------------- smaller pieces */
+[data-skin=tv] .ac { border-radius: 2px; }
+[data-skin=tv] .ac.a-w { background: var(--danger); color: #17130a; }
+[data-skin=tv] .ing { border-radius: 3px; }
+[data-skin=tv] .bar, [data-skin=tv] .bar i { border-radius: 0; }
+[data-skin=tv] :is(.changes, .hexdump, .warnbox) { border-radius: 3px; }
+
+/* ---------------------------------------------------------------- welcome: a small TV set */
+[data-skin=tv] .welcome { gap: 14px; padding-top: 52px; }
+[data-skin=tv] .welcome .logo { position: relative; width: 210px; height: 150px; margin-bottom: 14px; padding: 12px 46px 12px 12px;
+  display: block; background: #17130a; border-radius: 22px; box-shadow: 7px 7px 0 rgba(0,0,0,.28); }
+[data-theme=midnight] .welcome .logo { background: #2b3358; }
+/* antennae */
+[data-skin=tv] .welcome .logo::before { content: ""; position: absolute; left: 62px; bottom: 100%; width: 78px; height: 34px;
+  background:
+    linear-gradient(to top right, transparent calc(50% - 2px), var(--text) 0 calc(50% + 1px), transparent 0) right / 50% 100% no-repeat,
+    linear-gradient(to top left, transparent calc(50% - 2px), var(--text) 0 calc(50% + 1px), transparent 0) left / 50% 100% no-repeat; }
+/* two knobs */
+[data-skin=tv] .welcome .logo::after { content: ""; position: absolute; right: 13px; top: 34px; width: 20px; height: 62px;
+  background: radial-gradient(circle at 10px 10px, #ffd21a 0 9px, transparent 10px), radial-gradient(circle at 10px 50px, #ffd21a 0 9px, transparent 10px); }
+/* the screen */
+[data-skin=tv] .welcome .logo span { display: grid; place-items: center; width: 100%; height: 100%; border-radius: 14px; overflow: hidden;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,.2) 0 1px, transparent 1px 3px), var(--bars);
+  color: #17130a; font: italic 900 calc(34px * var(--fz, 1))/1 var(--display); font-stretch: condensed;
+  text-shadow: 0 0 2px #fff, 2px 2px 0 #fff, -2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff;
+  animation: tv-on .65s ease-out .1s both; }
+[data-skin=tv] .welcome h1 { font-size: calc(34px * var(--fz, 1)); font-weight: 900; font-style: italic; line-height: 1.05; }
+[data-skin=tv] .welcome p { color: var(--muted); font-weight: 500; }
+@keyframes tv-on {
+  0% { transform: scale(.02, .03); filter: brightness(4); }
+  45% { transform: scale(1, .03); filter: brightness(3); }
+  100% { transform: none; filter: none; }
+}
+@media (prefers-reduced-motion: reduce) { [data-skin=tv] * { animation: none !important; transition: none !important; } }

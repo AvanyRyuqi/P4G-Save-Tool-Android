@@ -65,9 +65,10 @@
   const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } };
   const autoXp = () => pref('p4g-autoxp', '0') === '1';
   function applyDisplay() {
-    let th = pref('p4g-theme', 'dark');
-    if (th === 'auto') th = (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+    let th = pref('p4g-theme', 'tv');
+    if (th === 'auto') th = (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches) ? 'tv' : 'midnight';
     document.documentElement.setAttribute('data-theme', th);
+    document.documentElement.setAttribute('data-skin', th === 'tv' || th === 'midnight' ? 'tv' : 'classic');
     document.documentElement.style.setProperty('--fz', { small: '0.9', normal: '1', large: '1.2' }[pref('p4g-fs', 'normal')] || '1');
   }
   applyDisplay();
@@ -849,7 +850,7 @@
     navEl.replaceChildren();
     if (!S) {
       mainEl.append(h('div', { class: 'welcome' },
-        h('div', { class: 'logo' }, 'P4G'),
+        h('div', { class: 'logo', 'aria-hidden': 'true' }, h('span', null, 'P4G')),
         h('h1', null, t('welcome_title')),
         h('p', null, t('welcome_text')),
         hasFolderAccess() ? h('button', { class: 'btn accent', onclick: openSaveFolder }, t('open_folder')) : null,
@@ -1105,7 +1106,7 @@
 
   function showSettings() {
     const choice = (label, key, def, opts) => {
-      const box = h('div', { class: 'chips', style: 'margin-bottom:0' });
+      const box = h('div', { class: 'chips wrap', style: 'margin-bottom:0' });
       const paint = () => [...box.children].forEach((c, i) => c.classList.toggle('on', opts[i][0] === pref(key, def)));
       opts.forEach(([val, name]) => box.append(h('button', { class: 'chip', onclick: () => { setPref(key, val); applyDisplay(); paint(); } }, name)));
       paint();
@@ -1115,7 +1116,7 @@
     const paint = () => { xpBtn.textContent = autoXp() ? t('on') : t('off'); xpBtn.classList.toggle('on', autoXp()); };
     paint();
     openSheet(t('settings'), h('div', null,
-      choice(t('theme'), 'p4g-theme', 'dark', [['dark', t('theme_dark')], ['light', t('theme_light')], ['auto', t('theme_auto')]]),
+      choice(t('theme'), 'p4g-theme', 'tv', [['tv', t('theme_tv')], ['midnight', t('theme_midnight')], ['auto', t('theme_auto')], ['dark', t('theme_dark')], ['light', t('theme_light')]]),
       choice(t('font_size'), 'p4g-fs', 'normal', [['small', t('fs_small')], ['normal', t('fs_normal')], ['large', t('fs_large')]]),
       h('p', { class: 'hint' }, t('auto_xp')), h('div', { class: 'chips', style: 'margin-bottom:0' }, xpBtn), h('p', { class: 'hint' }, t('auto_xp_hint')),
       h('p', { class: 'hint' }, t('help_hint'))));

@@ -52,6 +52,7 @@ main { flex: 1; overflow-y: auto; padding: 12px; -webkit-overflow-scrolling: tou
 /* chips */
 .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 10px; margin: 0 -12px 4px; padding-left: 12px; padding-right: 12px; scrollbar-width: none; }
 .chips::-webkit-scrollbar { display: none; }
+.chips.wrap { flex-wrap: wrap; }
 .chip { flex: 0 0 auto; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 8px 14px; min-height: 40px; cursor: pointer; white-space: nowrap; }
 .chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
 
@@ -174,7 +175,7 @@ label, .lbl, h3 { -webkit-user-select: none; user-select: none; -webkit-touch-ca
 table.team { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 3px; }
 .team th { font-size: calc(12px * var(--fz, 1)); text-align: center; overflow: hidden; text-overflow: ellipsis; }
 .team th small { display: block; font-weight: 400; color: var(--muted); font-size: calc(10px * var(--fz, 1)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.team tr > th:first-child { text-align: left; width: 62px; }
+.team tr > th:first-child { text-align: left; width: 4.6em; font-size: calc(11px * var(--fz, 1)); }
 .team tr > :last-child { width: 46px; }
 .team td.ac { display: table-cell; }
 .team tr.risk > th:first-child, .team tr.risk > td:last-child { color: var(--danger); }

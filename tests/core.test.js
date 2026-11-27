@@ -163,3 +163,17 @@ test('validate: flags risky values and is quiet for sane saves', () => {
   const codes = P4G.validate(s).map((w) => w.code);
   for (const c of ['mc_level_over_99', 'yen_over_max', 'item_over_99', 'persona_level_over_99', 'party_duplicate', 'name_empty']) assert.ok(codes.includes(c), c);
 });
+
+test('doctor: finds corrupted data and fixes it completely', () => {
+  const s = P4G.parse(fakeSave());
+  const cat = P4G.buildCatalog(db);
+  s.mcSlots[1].exists = true; s.mcSlots[1].id = 0;
+  s.mcSlots[0].skills[2] = 60000; s.mcSlots[0].level = 0;
+  s.socialLinks.push({ id: s.socialLinks[0].id, level: 40, progress: 0, flag: 0 });
+  s.party = [2, 2, 3]; s.yen = 2e9; s.inventory[2000] = 250; s.firstname = ''; s.surname = '';
+  const codes = P4G.diagnose(s, db, cat).map((x) => x.code);
+  for (const c of ['dr_persona_flag', 'dr_skill_unknown', 'dr_level0', 'dr_link_dup', 'dr_party_dup', 'dr_yen', 'dr_item99', 'dr_name']) assert.ok(codes.includes(c), c);
+  for (const c of codes) P4G.applyFix(s, c, db, cat);
+  assert.deepStrictEqual(P4G.diagnose(s, db, cat).filter((x) => x.sev === 'warn'), []);
+  assert.ok(P4G.serialize(s, fakeSave()).length >= 21625);
+});

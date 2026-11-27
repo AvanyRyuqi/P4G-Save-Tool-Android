@@ -314,6 +314,56 @@
     return same(slot.subarray(8, 24), md5(buf));
   }
 
+  // ------------------------------------------------------------ save doctor
+  function doctorChecks(db, cat) {
+    const all = (s) => [].concat(s.mcSlots, s.memberPersona.slice(1), s.compendium).filter(Boolean);
+    const real = (s) => all(s).filter((p) => p.id !== 0);
+    const equipSlots = (s, fn) => { for (let m = 0; m < 8; m++) if (m !== 4) fn(cat.members[m].equipId, m); };
+    const badEquip = (s) => {
+      let n = 0;
+      equipSlots(s, (eq) => {
+        const lists = [['weapon', cat.weaponsByMember[eq] || []], ['armor', cat.armor], ['accessory', cat.accessories], ['costume', cat.costumes]];
+        for (const [k, list] of lists) { const v = s.equip[k][eq]; if (v !== 0 && !list.some((x) => x.id === v)) n++; }
+      });
+      return n;
+    };
+    const dupLinks = (s) => { const seen = new Set(); let n = 0; for (const l of s.socialLinks) { if (seen.has(l.id)) n++; seen.add(l.id); } return n; };
+    return [
+      { code: 'dr_persona_flag', sev: 'warn', count: (s) => all(s).filter((p) => p.exists !== (p.id !== 0)).length, fix: (s) => all(s).forEach((p) => { p.exists = p.id !== 0; }) },
+      { code: 'dr_persona_unknown', sev: 'warn', count: (s) => real(s).filter((p) => db.personae[p.id] == null).length,
+        fix: (s) => { [].concat(s.mcSlots, s.memberPersona.slice(1)).forEach((p) => { if (p && p.id !== 0 && db.personae[p.id] == null) Object.assign(p, blankPersona()); }); s.compendium = s.compendium.filter((p) => db.personae[p.id] != null); } },
+      { code: 'dr_level0', sev: 'warn', count: (s) => real(s).filter((p) => p.level < 1).length, fix: (s) => real(s).forEach((p) => { if (p.level < 1) p.level = 1; }) },
+      { code: 'dr_level99', sev: 'info', count: (s) => real(s).filter((p) => p.level > 99).length, fix: (s) => real(s).forEach((p) => { if (p.level > 99) p.level = 99; }) },
+      { code: 'dr_stat99', sev: 'info', count: (s) => real(s).filter((p) => [p.st, p.ma, p.de, p.ag, p.lu].some((v) => v > 99)).length,
+        fix: (s) => real(s).forEach((p) => { ['st', 'ma', 'de', 'ag', 'lu'].forEach((k) => { if (p[k] > 99) p[k] = 99; }); }) },
+      { code: 'dr_skill_unknown', sev: 'warn', count: (s) => real(s).reduce((n, p) => n + p.skills.filter((k) => k !== 0 && db.allSkills[k] == null).length, 0),
+        fix: (s) => real(s).forEach((p) => { p.skills = p.skills.map((k) => (k !== 0 && db.allSkills[k] == null) ? 0 : k); }) },
+      { code: 'dr_item_unknown', sev: 'warn', count: (s) => s.inventory.filter((c, id) => c > 0 && id !== 1792 && db.allItems[id] == null).length,
+        fix: (s) => { s.inventory.forEach((c, id) => { if (c > 0 && id !== 1792 && db.allItems[id] == null) s.inventory[id] = 0; }); } },
+      { code: 'dr_item99', sev: 'info', count: (s) => s.inventory.filter((c) => c > 99).length, fix: (s) => { s.inventory.forEach((c, id) => { if (c > 99) s.inventory[id] = 99; }); } },
+      { code: 'dr_yen', sev: 'info', count: (s) => s.yen > 9999999 ? 1 : 0, fix: (s) => { s.yen = 9999999; } },
+      { code: 'dr_link_dup', sev: 'warn', count: dupLinks, fix: (s) => { const seen = new Set(); s.socialLinks = s.socialLinks.filter((l) => !seen.has(l.id) && seen.add(l.id)); } },
+      { code: 'dr_link_level', sev: 'info', count: (s) => s.socialLinks.filter((l) => l.level < 1 || l.level > 10).length, fix: (s) => s.socialLinks.forEach((l) => { l.level = Math.max(1, Math.min(10, l.level)); }) },
+      { code: 'dr_party_dup', sev: 'warn', count: (s) => { const nz = s.party.filter((x) => x !== 0); return nz.length - new Set(nz).size; },
+        fix: (s) => { const seen = new Set(); s.party = s.party.map((x) => { if (x === 0) return 0; if (seen.has(x)) return 0; seen.add(x); return x; }); } },
+      { code: 'dr_equip', sev: 'warn', count: badEquip,
+        fix: (s) => equipSlots(s, (eq) => {
+          const lists = [['weapon', cat.weaponsByMember[eq] || []], ['armor', cat.armor], ['accessory', cat.accessories], ['costume', cat.costumes]];
+          for (const [k, list] of lists) { const v = s.equip[k][eq]; if (v !== 0 && !list.some((x) => x.id === v)) s.equip[k][eq] = 0; }
+        }) },
+      { code: 'dr_mc_xp', sev: 'info', count: (s) => s.mcXp !== xpForLevel(s.mcLevel) ? 1 : 0, fix: (s) => { s.mcXp = xpForLevel(s.mcLevel); } },
+      { code: 'dr_name', sev: 'warn', count: (s) => (s.firstname.trim() === '' && s.surname.trim() === '') ? 1 : 0, fix: (s) => { s.firstname = 'Yu'; s.surname = 'Narukami'; } },
+    ];
+  }
+  /** Returns [{code, sev, n}] for every problem found. */
+  function diagnose(s, db, cat) {
+    return doctorChecks(db, cat).map((c) => ({ code: c.code, sev: c.sev, n: c.count(s) })).filter((x) => x.n > 0);
+  }
+  function applyFix(s, code, db, cat) {
+    const c = doctorChecks(db, cat).find((x) => x.code === code);
+    if (c) c.fix(s);
+  }
+
   // ---------------------------------------------------------------- catalog
   function buildCatalog(db) {
     const range = (arr, start, len) => {
@@ -429,7 +479,7 @@
   return {
     OFF, INVENTORY_SIZE, MIN_FILE_SIZE, COMPENDIUM_COUNT,
     parse, serialize, buildCatalog, md5, isBinslot, patchBinslot, newPersona, blankPersona,
-    pointsToLevel, levelToPoints, xpForLevel, validate, verifySlot,
+    pointsToLevel, levelToPoints, xpForLevel, validate, verifySlot, diagnose, applyFix,
     _internal: { readPString, writePString, writeJString, readPersona, writePersona },
   };
 });

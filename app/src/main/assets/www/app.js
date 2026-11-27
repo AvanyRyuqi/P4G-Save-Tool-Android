@@ -80,7 +80,8 @@
   }
   const sigOf = (o) => JSON.stringify(o);
   let hist = [], histSig = [], hi = -1, snapTimer = null, savedSig = null, base = null;
-  let compareMode = false;
+  let compareMode = false;      // false | 'diff' | 'hex'
+  let sandboxBase = null;       // non-null while the what-if sandbox is active
   // ---- draft autosave: unsaved edits survive the app being closed / killed
   const DRAFT_KEY = 'p4g-draft';
   function readDraft() { try { const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); return d && d.bin ? d : null; } catch (e) { return null; } }
@@ -625,9 +626,9 @@
 
   function updateTopbar() {
     if (!titleSub) return;
-    titleSub.textContent = S ? (fileName || 'save') + ' · ' + (slotBytes ? t('fmt_switch') + ' + binslot' : t('fmt_bin')) + (dirty ? t('unsaved') : '') : t('no_file');
+    titleSub.textContent = S ? (sandboxBase ? t('sandbox_banner') + ' · ' : '') + (fileName || 'save') + ' · ' + (slotBytes ? t('fmt_switch') + ' + binslot' : t('fmt_bin')) + (dirty ? t('unsaved') : '') : t('no_file');
     titleSub.classList.toggle('dirty', !!(S && dirty));
-    saveBtn.disabled = !S;
+    saveBtn.disabled = !S || !!sandboxBase;
   }
 
   function build() {
@@ -652,6 +653,7 @@
     menuEl = h('div', { class: 'menu' },
       S ? m(undo, t('undo')) : null, S ? m(redo, t('redo')) : null,
       S && dirty ? m(discardChanges, t('reset_changes')) : null,
+      S ? m(showTools, t('tools')) : null,
       S ? m(showSearch, t('search_all')) : null,
       S ? m(showSummary, t('summary')) : null,
       S ? m(showPresets, t('presets')) : null,
@@ -941,8 +943,292 @@
     openSheet(t('settings'), h('div', null,
       choice(t('theme'), 'p4g-theme', 'dark', [['dark', t('theme_dark')], ['light', t('theme_light')], ['auto', t('theme_auto')]]),
       choice(t('font_size'), 'p4g-fs', 'normal', [['small', t('fs_small')], ['normal', t('fs_normal')], ['large', t('fs_large')]]),
-      h('p', { class: 'hint' }, t('auto_xp')), h('div', { class: 'chips', style: 'margin-bottom:0' }, xpBtn), h('p', { class: 'hint' }, t('auto_xp_hint'))));
+      h('p', { class: 'hint' }, t('auto_xp')), h('div', { class: 'chips', style: 'margin-bottom:0' }, xpBtn), h('p', { class: 'hint' }, t('auto_xp_hint')),
+      h('p', { class: 'hint' }, t('help_hint'))));
   }
+
+  // ------------------------------------------------------------ advanced tools
+  const compTotalIds = () => { const r = []; for (let id = 1; id <= P4G.COMPENDIUM_COUNT; id++) if (DB.personae[id] && DB.personae[id] !== 'Blank') r.push(id); return r; };
+  const compRegistered = () => { const tot = new Set(compTotalIds()); return S.compendium.filter((p) => tot.has(p.id)).length; };
+
+  function showTools() {
+    if (!S) return;
+    let handle;
+    const opt = (label, fn) => h('button', { class: 'opt', onclick: () => { handle.close(); fn(); } }, h('span', null, label));
+    handle = openSheet(t('tools'), h('div', null,
+      opt(t('doctor'), showDoctor), opt(t('goals'), showGoals), opt(t('timeline'), showTimeline),
+      opt(t('sandbox'), showSandbox), opt(t('transfer'), showTransfer), opt(t('hex'), showHex)));
+  }
+
+  // ---- save doctor
+  function showDoctor() {
+    const body = h('div');
+    let handle;
+    const paint = () => {
+      body.replaceChildren();
+      const issues = P4G.diagnose(S, DB, CAT);
+      if (!issues.length) { body.append(h('p', { class: 'empty' }, t('doctor_ok'))); return; }
+      const fix = (codes) => { codes.forEach((c) => P4G.applyFix(S, c, DB, CAT)); markDirty(); commitSnap(); render(); paint(); toast(t('doctor_fixed')); };
+      [['warn', 'doctor_warn'], ['info', 'doctor_info']].forEach(([sev, title]) => {
+        const group = issues.filter((x) => x.sev === sev);
+        if (!group.length) return;
+        body.append(h('p', { class: 'hint', style: 'margin:10px 0 4px;color:' + (sev === 'warn' ? 'var(--danger)' : 'var(--accent)') }, t(title)));
+        group.forEach((x) => body.append(h('div', { class: 'item' },
+          h('div', { class: 'name' }, h('b', { style: 'white-space:normal' }, t(x.code, { n: x.n }))),
+          h('button', { class: 'btn small', onclick: () => fix([x.code]) }, t('doctor_fix')))));
+      });
+      body.append(h('div', { class: 'toolbar', style: 'margin-top:12px' }, h('button', { class: 'btn accent', onclick: () => fix(issues.map((x) => x.code)) }, t('doctor_fix_all'))),
+        h('p', { class: 'hint' }, t('doctor_hint')));
+    };
+    handle = openSheet(t('doctor'), body, { full: true });
+    paint();
+  }
+
+  // ---- timeline
+  const TL_KEY = 'p4g-timeline';
+  function readTimeline() { try { return JSON.parse(localStorage.getItem(TL_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function recordTimeline() {
+    if (!S) return;
+    try {
+      const all = readTimeline(), key = fileName || 'save';
+      const list = all[key] || [];
+      const e = { t: Date.now(), day: S.day, phase: S.dayPhase, lv: S.mcLevel, yen: S.yen, comp: S.compendium.length, links: S.socialLinks.length };
+      const last = list[list.length - 1];
+      if (last && ['day', 'phase', 'lv', 'yen', 'comp', 'links'].every((k) => last[k] === e[k])) return;
+      list.push(e); all[key] = list.slice(-150);
+      localStorage.setItem(TL_KEY, JSON.stringify(all));
+    } catch (e) { /* storage unavailable */ }
+  }
+  function spark(label, values) {
+    const W = 300, H = 56, min = Math.min.apply(null, values), max = Math.max.apply(null, values), span = max - min || 1;
+    const pts = values.map((v, i) => (values.length === 1 ? W / 2 : 4 + i * (W - 8) / (values.length - 1)).toFixed(1) + ',' + (H - 6 - (v - min) * (H - 12) / span).toFixed(1));
+    return h('div', { style: 'margin:10px 0' },
+      h('div', { class: 'row', style: 'margin:0' }, h('label', { style: 'flex:1;color:var(--text)' }, label), h('span', { class: 'hint', style: 'margin:0' }, min === max ? String(max) : min + ' → ' + values[values.length - 1] + '  (max ' + max + ')')),
+      h('div', { html: '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:56px;background:var(--surface-2);border-radius:10px"><polyline fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" points="' + pts.join(' ') + '"/></svg>' }));
+  }
+  function showTimeline() {
+    const list = readTimeline()[fileName || 'save'] || [];
+    const fmt = (ms) => { try { return new Date(ms).toLocaleString(lang === 'id' ? 'id-ID' : 'en-GB', { dateStyle: 'short', timeStyle: 'short' }); } catch (e) { return ''; } };
+    openSheet(t('timeline'), list.length ? h('div', null, h('p', { class: 'hint', style: 'margin-top:0' }, t('tl_hint', { name: fileName })),
+      spark(t('tl_yen'), list.map((x) => x.yen)), spark(t('tl_level'), list.map((x) => x.lv)), spark(t('tl_comp'), list.map((x) => x.comp)), spark(t('tl_links'), list.map((x) => x.links)),
+      h('h3', { style: 'margin:14px 0 6px;font-size:13px;color:var(--accent);text-transform:uppercase' }, t('tl_entries')),
+      list.slice().reverse().slice(0, 40).map((x) => h('div', { class: 'item', style: 'margin-bottom:6px' }, h('div', { class: 'name' }, h('b', null, t('d_day') + ' ' + x.day + ' · Lv ' + x.lv), h('small', null, fmt(x.t) + ' · ¥' + x.yen + ' · ' + x.comp + ' Persona'))))) : h('p', { class: 'empty' }, t('tl_none')), { full: true });
+  }
+
+  // ---- goals
+  const GOALS_KEY = 'p4g-goals';
+  function metrics() {
+    const links = Math.min(23, CAT.socialLinkIDs.filter((x) => x.id !== 0).length);
+    return {
+      yen: { label: 'gm_yen', get: () => S.yen, max: 9999999 },
+      level: { label: 'gm_level', get: () => S.mcLevel, max: 99 },
+      comp: { label: 'gm_comp', get: compRegistered, max: compTotalIds().length },
+      links: { label: 'gm_links', get: () => S.socialLinks.filter((l) => l.level >= 10).length, max: links },
+      stats: { label: 'gm_stats', get: () => CAT.statNames.filter((n, st) => P4G.pointsToLevel(st, S.socialStats[st]) >= 5).length, max: 5 },
+      slots: { label: 'gm_slots', get: () => S.mcSlots.filter((p) => p.id).length, max: 12 },
+    };
+  }
+  function showGoals() {
+    const M = metrics();
+    const custom = () => { try { const g = JSON.parse(localStorage.getItem(GOALS_KEY) || '[]'); return Array.isArray(g) ? g.filter((x) => M[x.metric] && Number.isFinite(x.target)) : []; } catch (e) { return []; } };
+    const putCustom = (g) => { try { localStorage.setItem(GOALS_KEY, JSON.stringify(g)); } catch (e) { /* ignore */ } };
+    const body = h('div');
+    let handle;
+    const bar = (label, cur, target, onDelete) => {
+      const pct = Math.max(0, Math.min(100, Math.round(cur * 100 / (target || 1))));
+      return h('div', { class: 'goal' },
+        h('div', { class: 'row', style: 'margin:0 0 4px' }, h('label', { style: 'flex:1;color:var(--text)' }, (pct >= 100 ? '✓ ' : '') + label),
+          h('span', { class: 'hint', style: 'margin:0' }, cur + ' / ' + target + (pct >= 100 ? ' · ' + t('goal_done') : '')),
+          onDelete ? h('button', { class: 'btn small danger', style: 'min-height:30px', onclick: onDelete }, '✕') : null),
+        h('div', { class: 'bar' }, h('i', { style: 'width:' + pct + '%' + (pct >= 100 ? ';background:var(--ok)' : '') })));
+    };
+    const paint = () => {
+      body.replaceChildren(h('p', { class: 'hint', style: 'margin-top:0' }, t('goals_hint')));
+      Object.keys(M).forEach((k) => body.append(bar(t(M[k].label), M[k].get(), M[k].max)));
+      const c = custom();
+      c.forEach((g, i) => body.append(bar(t(M[g.metric].label), M[g.metric].get(), g.target, () => { const x = custom(); x.splice(i, 1); putCustom(x); paint(); })));
+      body.append(h('button', { class: 'btn', style: 'width:100%;margin-top:12px', onclick: async () => {
+        const keys = Object.keys(M);
+        const idx = await pick(t('goal_pick_metric'), keys.map((k, i) => ({ id: i, name: t(M[k].label), sub: '≤ ' + M[k].max })));
+        if (idx === undefined) return;
+        const key = keys[idx];
+        const target = await promptNumber(t('goal_target_q'), '', M[key].max, 1, M[key].max, t('ok'));
+        if (target === undefined) return;
+        const x = custom(); x.push({ metric: key, target }); putCustom(x); paint();
+      } }, t('goal_add')));
+    };
+    handle = openSheet(t('goals'), body, { full: true });
+    paint();
+  }
+
+  // ---- sandbox
+  function showSandbox() {
+    if (!sandboxBase) {
+      commitSnap(); sandboxBase = deepClone(S); updateTopbar(); toast(t('sandbox_started'));
+      return;
+    }
+    commitSnap();
+    const lines = diffLines(sandboxBase, S);
+    let handle;
+    handle = openSheet(t('sandbox'), h('div', null,
+      h('p', { class: 'hint', style: 'margin-top:0' }, t('sandbox_impact')),
+      h('div', { class: 'changes', style: 'max-height:40vh' }, lines.length ? lines.slice(0, 80).map((x) => h('div', null, x)) : h('div', { class: 'hint' }, t('review_none'))),
+      h('div', { class: 'toolbar', style: 'margin-top:12px' },
+        h('button', { class: 'btn danger', onclick: () => {
+          handle.close(); S = deepClone(sandboxBase); sandboxBase = null; commitSnap(); gotoHist(hi); updateTopbar(); toast(t('sandbox_discarded'));
+        } }, t('sandbox_discard')),
+        h('button', { class: 'btn accent', onclick: () => { handle.close(); sandboxBase = null; updateTopbar(); toast(t('sandbox_applied')); } }, t('sandbox_apply')))));
+  }
+
+  // ---- transfer (text code)
+  async function packCode() {
+    const bin = currentBytes(), slot = currentSlot(bin);
+    const payload = new TextEncoder().encode(JSON.stringify({ n: fileName, sn: slotName, b: toB64(bin), s: slot ? toB64(slot) : null }));
+    if (window.CompressionStream) {
+      const buf = new Uint8Array(await new Response(new Blob([payload]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+      return 'P4GX1:' + toB64(buf);
+    }
+    return 'P4GR1:' + toB64(payload);
+  }
+  async function unpackCode(code) {
+    code = code.trim();
+    const m = /^(P4GX1|P4GR1):([A-Za-z0-9+/=\s]+)$/.exec(code);
+    if (!m) throw new Error('bad');
+    let bytes = fromB64(m[2].replace(/\s+/g, ''));
+    if (m[1] === 'P4GX1') {
+      if (!window.DecompressionStream) throw new Error('bad');
+      bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+    }
+    const o = JSON.parse(new TextDecoder().decode(bytes));
+    if (!o || typeof o.b !== 'string') throw new Error('bad');
+    return o;
+  }
+  function showTransfer() {
+    const ta = h('textarea', { rows: 8, spellcheck: 'false', autocapitalize: 'none', class: 'ta' });
+    let handle;
+    const make = async () => { ta.value = S ? await packCode() : ''; };
+    const copy = async () => {
+      ta.focus(); ta.select(); let ok = false;
+      try { await navigator.clipboard.writeText(ta.value); ok = true; } catch (e) { try { ok = document.execCommand('copy'); } catch (e2) { /* manual */ } }
+      if (ok) toast(t('ei_copied'));
+    };
+    const load = async () => {
+      try {
+        const o = await unpackCode(ta.value);
+        if (dirty && !(await confirmDialog(t('discard_open'), t('open'), true))) return;
+        const slot = o.s ? { name: o.sn || 'save.binslot', bytes: fromB64(o.s) } : null;
+        handle.close();
+        if (!loadBytes(o.n || 'save.bin', fromB64(o.b), slot, true)) return;
+        savedSig = null; dirty = true; updateTopbar(); syncDraft(); toast(t('tr_loaded'));
+      } catch (e) { toast(t('tr_bad'), true); }
+    };
+    handle = openSheet(t('transfer'), h('div', null, h('p', { class: 'hint', style: 'margin-top:0' }, t('tr_hint')), ta,
+      h('div', { class: 'toolbar', style: 'margin-top:10px;flex-wrap:wrap' },
+        h('button', { class: 'btn', onclick: make }, t('tr_make')), h('button', { class: 'btn', onclick: copy }, t('tr_copy')),
+        bridge && bridge.shareText ? h('button', { class: 'btn', onclick: () => ta.value && bridge.shareText(ta.value) }, t('share')) : null,
+        h('button', { class: 'btn accent', onclick: load }, t('tr_load')))));
+    make();
+  }
+
+  // ---- hex inspector
+  const REGIONS = Object.entries(P4G.OFF).filter(([, v]) => typeof v === 'number').sort((a, b) => a[1] - b[1]);
+  const regionOf = (off) => { let r = null; for (const [k, v] of REGIONS) if (v <= off) r = [k, v]; return r ? r[0] + '+' + (off - r[1]) : 'header+' + off; };
+  const hex = (n, w) => n.toString(16).toUpperCase().padStart(w, '0');
+  function showHex() {
+    const cur = currentBytes(), ref = orig;
+    const PAGE = 256;
+    let start = 0;
+    const body = h('div');
+    let handle;
+    const dump = h('div', { class: 'hexdump' });
+    const info = h('p', { class: 'hint' });
+    const goInput = h('input', { type: 'text', placeholder: t('hex_goto'), autocomplete: 'off', autocapitalize: 'none' });
+    const paint = () => {
+      start = Math.max(0, Math.min(Math.floor((cur.length - 1) / 16) * 16, start - (start % 16)));
+      dump.replaceChildren();
+      for (let a = start; a < Math.min(cur.length, start + PAGE); a += 16) {
+        const row = h('div', { class: 'hx' }, h('span', { class: 'ao' }, hex(a, 5)));
+        let asc = '';
+        for (let i = a; i < a + 16; i++) {
+          if (i >= cur.length) { row.append(h('span', { class: 'b' }, '  ')); continue; }
+          const changed = ref && i < ref.length && ref[i] !== cur[i];
+          row.append(h('span', { class: 'b' + (changed ? ' chg' : '') }, hex(cur[i], 2)));
+          asc += cur[i] >= 32 && cur[i] < 127 ? String.fromCharCode(cur[i]) : '.';
+        }
+        row.append(h('span', { class: 'asc' }, asc));
+        dump.append(row);
+      }
+      info.textContent = '0x' + hex(start, 5) + ' – 0x' + hex(Math.min(cur.length, start + PAGE) - 1, 5) + '  ·  ' + regionOf(start) + '  ·  ' + cur.length + ' B';
+    };
+    goInput.addEventListener('change', () => {
+      const v = goInput.value.trim();
+      const n = /^0x/i.test(v) || /[a-f]/i.test(v) ? parseInt(v.replace(/^0x/i, ''), 16) : parseInt(v, 10);
+      if (Number.isFinite(n)) { start = n; paint(); }
+    });
+    const regionBtn = h('button', { class: 'btn', style: 'width:100%;margin-bottom:8px', onclick: async () => {
+      const idx = await pick(t('hex_region'), REGIONS.map(([k, v], i) => ({ id: i, name: k, sub: '0x' + hex(v, 5) })));
+      if (idx !== undefined) { start = REGIONS[idx][1]; paint(); }
+    } }, t('hex_region'));
+    body.append(h('p', { class: 'hint', style: 'margin-top:0' }, t('hex_hint')), regionBtn, goInput, info, dump,
+      h('div', { class: 'toolbar', style: 'margin-top:8px' },
+        h('button', { class: 'btn', onclick: () => { start -= PAGE; paint(); } }, t('hex_prev')),
+        h('button', { class: 'btn', onclick: () => { start += PAGE; paint(); } }, t('hex_next'))),
+      h('button', { class: 'btn', style: 'width:100%;margin-top:8px', onclick: () => { handle.close(); compareMode = 'hex'; pickFiles(); } }, t('hex_compare')));
+    handle = openSheet(t('hex'), body, { full: true });
+    paint();
+  }
+  function showHexDiff(name, other) {
+    const cur = currentBytes(), n = Math.min(cur.length, other.length);
+    const ranges = [];
+    for (let i = 0; i < n; i++) {
+      if (cur[i] === other[i]) continue;
+      const last = ranges[ranges.length - 1];
+      if (last && i === last.end) last.end = i + 1; else ranges.push({ start: i, end: i + 1 });
+    }
+    const rows = ranges.slice(0, 200).map((r) => {
+      const len = r.end - r.start, cap = Math.min(len, 8);
+      const a = Array.from(cur.subarray(r.start, r.start + cap), (v) => hex(v, 2)).join(' ') + (len > cap ? ' …' : '');
+      const b = Array.from(other.subarray(r.start, r.start + cap), (v) => hex(v, 2)).join(' ') + (len > cap ? ' …' : '');
+      return h('div', { class: 'item', style: 'display:block' }, h('b', null, '0x' + hex(r.start, 5) + ' · ' + regionOf(r.start) + ' · ' + len + ' B'),
+        h('div', { class: 'hint', style: 'font-family:ui-monospace,monospace;margin:2px 0 0;word-break:break-all' }, a + '  →  ' + b));
+    });
+    openSheet(t('hex_diff_title', { name }), h('div', null, h('p', { class: 'hint', style: 'margin-top:0' }, t('hex_ranges', { n: ranges.length })),
+      rows.length ? h('div', { class: 'list' }, rows) : h('p', { class: 'empty' }, t('hex_none'))), { full: true });
+  }
+
+  // ---- long-press explanations
+  (function initHelp() {
+    const map = () => {
+      const m = { Lv: 'level', ST: 'stat', MA: 'stat', DE: 'stat', AG: 'stat', LU: 'stat' };
+      [['yen', 'yen'], ['total_xp', 'xp'], ['level', 'link_level'], ['progress', 'progress'], ['day', 'day'], ['next_day', 'day'], ['phase', 'phase'], ['next_phase', 'phase'],
+        ['persona', 'persona'], ['social_stats', 'social_stats'], ['party_config', 'party'], ['hero_name', 'name']].forEach(([k, v]) => { m[t(k)] = v; });
+      return m;
+    };
+    let timer = null;
+    const cancel = () => { clearTimeout(timer); timer = null; };
+    const lookup = (target) => {
+      const el = target.closest && target.closest('label, .lbl, h3');
+      if (!el) return null;
+      const txt = el.textContent.trim(), key = map()[txt];
+      return key ? { txt, key } : null;
+    };
+    const show = (hit) => openSheet(hit.txt, h('div', null, h('p', null, t('help_' + hit.key)), h('p', { class: 'hint' }, t('help_title'))));
+    const start = (e) => { const hit = lookup(e.target); if (!hit) return; cancel(); timer = setTimeout(() => { timer = null; show(hit); }, 500); };
+    ['touchstart', 'mousedown'].forEach((ev) => document.addEventListener(ev, start, { passive: true }));
+    ['touchend', 'touchmove', 'touchcancel', 'mouseup', 'scroll'].forEach((ev) => document.addEventListener(ev, cancel, { passive: true, capture: true }));
+    document.addEventListener('contextmenu', (e) => { const hit = lookup(e.target); if (hit) { e.preventDefault(); cancel(); show(hit); } });
+  })();
+
+  // ---- the emulator rewrote the opened save
+  let extPrompt = false;
+  window.__onExternalChange = (binPath, slotPath) => {
+    if (extPrompt || !S) return;
+    extPrompt = true;
+    confirmDialog(t('ext_changed_q') + (dirty ? t('ext_changed_dirty') : ''), t('reload'), dirty).then((ok) => {
+      extPrompt = false;
+      if (ok && bridge && bridge.openPath) bridge.openPath(binPath, slotPath);
+    });
+  };
 
   // --------------------------------------------------------------- file I/O
   const toB64 = (u8) => { let s = ''; const CH = 0x8000; for (let i = 0; i < u8.length; i += CH) s += String.fromCharCode.apply(null, u8.subarray(i, i + CH)); return btoa(s); };
@@ -955,7 +1241,7 @@
       S = parsed; orig = bytes; fileName = name; dirty = false;
       slotBytes = slot ? slot.bytes : null; slotName = slot ? slot.name : '';
       memberIdx = 0; slotIdx = 0; invFilter = ''; compFilter = ''; tab = 'stats';
-      resetHistory(); clearDraft();
+      resetHistory(); clearDraft(); sandboxBase = null; recordTimeline();
       build();
       if (!silent) {
         toast(t('opened', { name: name + (slot ? ' + ' + slot.name : '') }));
@@ -970,9 +1256,10 @@
   /** files: [{name, bytes}] - one .bin plus an optional .binslot, in any order. */
   function loadFiles(files) {
     if (compareMode) {
-      compareMode = false;
+      const mode = compareMode; compareMode = false;
       const only = files.find((f) => !/\.binslot$/i.test(f.name));
       if (!only) { toast(t('compare_pick_bin'), true); return; }
+      if (mode === 'hex') { showHexDiff(only.name, only.bytes); return; }
       try { showCompare(only.name, P4G.parse(only.bytes)); } catch (e) { toast(e.code ? t('err_' + e.code, e.args) : (e.message || String(e)), true); }
       return;
     }
@@ -1051,7 +1338,7 @@
   function doCompare() {
     if (!S) return;
     commitSnap();
-    compareMode = true;
+    compareMode = 'diff';
     pickFiles();
   }
   function showCompare(name, other) {
@@ -1072,6 +1359,7 @@
   }
   async function doSave() {
     if (!S) return;
+    if (sandboxBase) { toast(t('sandbox_blocked'), true); return; }
     const names = fileName + (slotBytes ? ' ' + t('and') + ' ' + slotName : '');
     if (!(await reviewDialog(bridge ? t('overwrite_q', { names }) : '', t('save')))) return;
     if (!bridge) return doSaveAs(true);
@@ -1082,6 +1370,7 @@
   }
   async function doSaveAs(skipReview) {
     if (!S) return;
+    if (sandboxBase) { toast(t('sandbox_blocked'), true); return; }
     if (skipReview !== true && !(await reviewDialog('', t('save_as')))) return;
     const out = currentBytes(), slot = currentSlot(out);
     if (slot && !P4G.verifySlot(slot, out)) { toast(t('err_verify_bad'), true); return; }
@@ -1096,7 +1385,7 @@
 
   // callbacks invoked by the Android host
   window.__onFilesOpened = (arr) => loadFiles(arr.map((f) => ({ name: f.name, bytes: fromB64(f.b64) })));
-  window.__onSaved = (name) => { if (pendingBytes) { orig = pendingBytes; pendingBytes = null; } if (pendingSlot) { slotBytes = pendingSlot; pendingSlot = null; } if (name) fileName = name; commitSnap(); savedSig = sigOf(S); base = deepClone(S); dirty = false; updateTopbar(); clearDraft(); toast(t('saved', { name: fileName })); };
+  window.__onSaved = (name) => { if (pendingBytes) { orig = pendingBytes; pendingBytes = null; } if (pendingSlot) { slotBytes = pendingSlot; pendingSlot = null; } if (name) fileName = name; commitSnap(); savedSig = sigOf(S); base = deepClone(S); dirty = false; updateTopbar(); clearDraft(); recordTimeline(); toast(t('saved', { name: fileName })); };
   window.__onError = (code, detail) => { pendingBytes = null; pendingSlot = null; toast(STR.en['err_' + code] ? t('err_' + code, { detail }) : code, true); };
   window.__back = () => {
     if (menuEl) { toggleMenu(); return 'handled'; }

@@ -9,6 +9,8 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Base64
@@ -52,6 +54,17 @@ class MainActivity : AppCompatActivity() {
     private var binOriginal: ByteArray? = null
     private var slotOriginal: ByteArray? = null
     private var backedUp = false
+
+    // watcher: notices when another app (the emulator) rewrites the opened save
+    private val poller = Handler(Looper.getMainLooper())
+    private var knownBin = 0L
+    private var knownSlot = 0L
+    private val pollTask = object : Runnable {
+        override fun run() {
+            checkExternalChange()
+            poller.postDelayed(this, 3000)
+        }
+    }
 
     // "Save as" state
     private var pendingBin: ByteArray? = null
@@ -155,8 +168,15 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    override fun onPause() {
+        poller.removeCallbacks(pollTask)
+        super.onPause()
+    }
+
     override fun onResume() {
         super.onResume()
+        poller.removeCallbacks(pollTask)
+        poller.postDelayed(pollTask, 1000)
         // Back from the "All files access" settings screen.
         if (awaitingPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             awaitingPermission = false
@@ -230,6 +250,7 @@ class MainActivity : AppCompatActivity() {
                 binFile = bf; binUri = null; binName = bf.name; binOriginal = binBytes
                 slotFile = sf; slotUri = null; slotName = sf?.name ?: ""; slotOriginal = slotBytes
                 backedUp = false
+                rememberStamps()
 
                 val files = JSONArray()
                 files.put(
@@ -266,6 +287,7 @@ class MainActivity : AppCompatActivity() {
                 if (bf != null) {
                     bf.writeBytes(bin)
                     if (slot != null && sf != null) sf.writeBytes(slot)
+                    rememberStamps()
                 } else if (bu != null) {
                     writeBytes(bu, bin)
                     if (slot != null && su != null) writeBytes(su, slot)
@@ -532,6 +554,33 @@ class MainActivity : AppCompatActivity() {
         val out = contentResolver.openOutputStream(uri, "wt")
             ?: throw IllegalStateException("cannot write file")
         out.use { it.write(data); it.flush() }
+    }
+
+    private fun stampOf(f: File?): Long = if (f != null && f.exists()) f.lastModified() * 31 + f.length() else 0L
+
+    private fun rememberStamps() {
+        knownBin = stampOf(binFile)
+        knownSlot = stampOf(slotFile)
+    }
+
+    /** Called every few seconds while the app is visible; reports saves rewritten by another app. */
+    private fun checkExternalChange() {
+        val bf = binFile ?: return
+        val sf = slotFile
+        val nb = stampOf(bf)
+        val ns = stampOf(sf)
+        if (nb == knownBin && ns == knownSlot) return
+        knownBin = nb
+        knownSlot = ns
+        try {
+            val dir = backupDir().apply { mkdirs() }
+            val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+            if (bf.exists()) File(dir, "${bf.name}-$stamp.bak").writeBytes(bf.readBytes())
+            if (sf != null && sf.exists()) File(dir, "${sf.name}-$stamp.bak").writeBytes(sf.readBytes())
+        } catch (ignored: Exception) {
+            // the notification below is still useful without the copy
+        }
+        callJs("window.__onExternalChange(${JSONObject.quote(bf.absolutePath)}, ${JSONObject.quote(sf?.absolutePath ?: "")})")
     }
 
     private fun backupDir(): File = File(getExternalFilesDir(null) ?: filesDir, "backups")

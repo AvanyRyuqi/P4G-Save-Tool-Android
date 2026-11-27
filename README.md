@@ -132,3 +132,13 @@ Not included: Steam/PC save support (format not verified).
 - **Compare with another save**, **Save summary**, **Share** (.bin/.binslot/Persona text) and **saved Persona builds**.
 
 Not included (needs data/samples I do not have): default skills per Persona, fusion helper, story-flag editor, Steam/PC saves.
+
+### Update: advanced tools (⋮ → Advanced tools)
+- **Save doctor** – scans for corrupt/inconsistent data (bad Persona flags, unknown IDs, duplicate links/party, unfit equipment…) with one-tap fixes.
+- **Goals** – auto-filled progress bars (Compendium, social links, stats, Yen, level…) plus custom targets.
+- **Timeline** – charts of Yen / level / Compendium / links over time, recorded on open & save.
+- **Sandbox** – experiment freely; saving is blocked until you apply or discard, with an impact summary.
+- **Transfer code** – whole save (+ .binslot) as a compressed text code for moving between devices (no QR).
+- **Hex inspector** – browse raw bytes by region, highlights edited bytes, and diffs against another save to locate new offsets.
+- **Explanations** – long-press labels such as Yen, Lv, ST, Day for a short explanation.
+- **Watcher** – when the emulator rewrites the opened save (folder mode), the app backs up the new file and offers to reload.

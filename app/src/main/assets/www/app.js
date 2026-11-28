@@ -3,6 +3,7 @@
   'use strict';
   const DB = window.P4G_DB;
   const CAT = P4G.buildCatalog(DB);
+  const PK = P4GPersona.create(window.P4G_PERSONA_DATA, DB, P4G.xpForLevel);
   const bridge = window.AndroidBridge || null;
   const STR = window.P4G_I18N;
   let lang = 'id';
@@ -64,9 +65,10 @@
   const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* ignore */ } };
   const autoXp = () => pref('p4g-autoxp', '0') === '1';
   function applyDisplay() {
-    let th = pref('p4g-theme', 'dark');
-    if (th === 'auto') th = (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+    let th = pref('p4g-theme', 'tv');
+    if (th === 'auto') th = (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches) ? 'tv' : 'midnight';
     document.documentElement.setAttribute('data-theme', th);
+    document.documentElement.setAttribute('data-skin', th === 'tv' || th === 'midnight' ? 'tv' : 'classic');
     document.documentElement.style.setProperty('--fz', { small: '0.9', normal: '1', large: '1.2' }[pref('p4g-fs', 'normal')] || '1');
   }
   applyDisplay();
@@ -340,14 +342,18 @@
     const el = h('div');
     const refresh = () => { el.replaceChildren(); build(); };
     function build() {
+      const aff = affinityBox(p);
       if (opts.idPicker) {
         el.append(row(t('persona'), selectField(CAT.personae, () => p.id, (id) => {
+          const wasBlank = p.id === 0;
           p.id = id;
           if (p.level === 0 && id !== 0 && !p.exists) p.level = 1;
           p.exists = id !== 0;
           opts.onIdChange && opts.onIdChange();
+          if (PK.defaults(id)) offerDefaults(p, id, wasBlank);
         }, t('persona'))));
       }
+      el.append(aff.el);
       let xpInput = null;
       el.append(slider('Lv', () => p.level, (v) => {
         p.level = v;
@@ -362,15 +368,145 @@
       el.append(h('p', { class: 'hint' }, t('skill')));
       const options = skillOptions();
       for (let i = 0; i < 8; i++) {
-        el.append(skillField(options, () => p.skills[i], (id) => { p.skills[i] = id; }, t('skill_n', { n: i + 1 })));
+        el.append(skillField(options, () => p.skills[i], (id) => { p.skills[i] = id; aff.paint(); }, t('skill_n', { n: i + 1 })));
       }
       el.append(h('div', { class: 'toolbar', style: 'margin-top:10px;flex-wrap:wrap' },
+        PK.defaults(p.id) ? h('button', { class: 'btn small', onclick: () => refillDefaults(p, refresh) }, t('pd_refill')) : null,
+        PK.canFuse(p.id) ? h('button', { class: 'btn small', onclick: () => showFusion(p.id) }, t('fu_for_this')) : null,
+        PK.canFuse(p.id) ? h('button', { class: 'btn small', onclick: () => SCREENS.showPlanner(p.id) }, t('pl_for_this')) : null,
         h('button', { class: 'btn small', onclick: () => copyPersona(p) }, t('copy_to')),
         h('button', { class: 'btn small', onclick: () => { p.skills = [0, 0, 0, 0, 0, 0, 0, 0]; markDirty(); refresh(); } }, t('clear_skills')),
         h('button', { class: 'btn small', onclick: () => personaExchange(p, opts, refresh) }, t('export_import'))));
     }
     build();
     return el;
+  }
+
+  // ---- default level / stats / skills
+  /** After a Persona was picked: an empty slot is filled at once, a used one only if confirmed. */
+  async function offerDefaults(p, id, wasBlank) {
+    if (!wasBlank && !(await confirmDialog(t('pd_fill_q', { name: personaName(id), lv: PK.defaults(id).level }), t('pd_fill_yes')))) return;
+    if (p.id !== id) return;
+    PK.applyDefaults(p, id);
+    markDirty(); commitSnap(); render();
+  }
+  async function refillDefaults(p, refresh) {
+    const baseLv = PK.defaults(p.id).level;
+    const lv = await promptNumber(t('pd_level_q', { name: personaName(p.id) }), t('pd_level_hint', { lv: baseLv }), clamp(p.level, baseLv, 99), baseLv, 99, t('pd_fill_yes'));
+    if (lv === undefined) return;
+    PK.applyDefaults(p, p.id, lv);
+    markDirty(); commitSnap(); refresh(); toast(t('pd_done'));
+  }
+
+  // ---- element affinities
+  const AFF_LABEL = { w: 'Wk', '-': '–', S: '½', s: 'Str', n: 'Nul', r: 'Rpl', d: 'Drn' };
+  const affClass = (code) => 'a-' + (code === '-' ? 'none' : code === 'S' ? 'half' : code);
+  const affCell = (c, tag) => h(tag || 'span', { class: 'ac ' + affClass(c.code) }, AFF_LABEL[c.code] + (c.skill ? '*' : ''));
+  /** The eight affinities of one Persona (base data plus passive skills). */
+  function affinityBox(p) {
+    const el = h('div', { class: 'affbox' });
+    const paint = () => {
+      const cells = p.id ? PK.affinities(p.id, p.skills) : null;
+      el.hidden = !cells;
+      el.replaceChildren();
+      if (!cells) return;
+      el.append(h('div', { class: 'aff' }, cells.map((c) => h('div', null, h('small', null, c.elem === 'alm' ? 'Alm.' : SKILL_ELEMS[c.elem]), affCell(c)))));
+      if (cells.some((c) => c.skill)) el.append(h('p', { class: 'hint' }, t('el_from_skill')));
+    };
+    paint();
+    return { el, paint };
+  }
+
+  /** The protagonist with the Persona in slot `lead`, followed by the active party members. */
+  function teamOf(lead) {
+    const team = [{ who: protagName(), p: S.mcSlots[lead] }];
+    // party byte: 2 = Yosuke ... 8 = Teddie, one more than the member index in the file
+    S.party.forEach((v) => { const i = v - 1; if (i >= 1 && i < S.memberPersona.length) team.push({ who: DB.party[i], p: S.memberPersona[i] }); });
+    return team;
+  }
+
+  /** Affinity table for the protagonist's chosen Persona and the three active party members. */
+  function showTeam() {
+    if (!S) return;
+    const filled = S.mcSlots.map((p, i) => ({ p, i })).filter((x) => x.p.id);
+    let lead = filled.some((x) => x.i === slotIdx) ? slotIdx : (filled.length ? filled[0].i : 0);
+    const body = h('div');
+    const paint = () => {
+      const team = teamOf(lead);
+      team.forEach((m) => { m.cells = m.p && m.p.id ? PK.affinities(m.p.id, m.p.skills) : null; });
+      const sum = PK.teamSummary(team.map((m) => m.cells));
+      body.replaceChildren(h('p', { class: 'hint', style: 'margin-top:0' }, t('el_team_hint')));
+      if (filled.length) body.append(h('div', { class: 'chips' }, filled.map((x) => h('button', { class: 'chip' + (x.i === lead ? ' on' : ''), onclick: () => { lead = x.i; paint(); } }, personaName(x.p.id)))));
+      body.append(h('table', { class: 'team' },
+        h('tr', null, h('th'), team.map((m) => h('th', null, m.who.split(' ')[0], h('small', null, m.p && m.p.id ? personaName(m.p.id) : '—'))), h('th', null, t('el_weak_n'))),
+        sum.map((x, e) => h('tr', { class: x.weak >= 2 || (x.weak && !x.guard) ? 'risk' : '' }, h('th', null, SKILL_ELEMS[x.elem]),
+          team.map((m) => m.cells ? affCell(m.cells[e], 'td') : h('td', { class: 'ac' }, '?')),
+          h('td', { class: 'ac' }, String(x.weak))))),
+        h('p', { class: 'hint' }, t('el_legend')), h('p', { class: 'hint' }, t('el_note')));
+    };
+    paint();
+    openSheet(t('el_team'), body, { full: true });
+  }
+
+  // ---- fusion calculator (read-only)
+  function showFusion(startId) {
+    if (!S) return;
+    let target = PK.canFuse(startId) ? startId : 0, mode = 'pairs', ownedOnly = false, query = '', limit = 50;
+    const back = [];
+    const cache = {};
+    const head = h('div'), list = h('div', { class: 'list' });
+    const inSlots = new Set(S.mcSlots.map((p) => p.id).filter(Boolean)), inComp = new Set(S.compendium.map((p) => p.id));
+    const owned = new Set([...inSlots, ...inComp]);
+    const label = (id) => { const b = PK.base(id); return b.race + ' · Lv ' + b.lvl; };
+    const get = () => {
+      const key = target + mode;
+      if (!cache[key]) { const r = PK.recipes(target, { triple: mode === 'triples' }); cache[key] = { special: r.special, list: PK.rank(r.special ? [r.special] : r[mode], owned) }; }
+      return cache[key];
+    };
+    const go = (id) => { target = id; limit = 50; query = ''; paintHead(); paintList(); };
+    const ingredient = (id) => h('button', { class: 'ing' + (owned.has(id) ? ' have' : ''), onclick: () => { back.push(target); go(id); } },
+      h('b', null, (inSlots.has(id) ? '● ' : inComp.has(id) ? '◆ ' : '') + personaName(id)), h('small', null, label(id)));
+    function paintList() {
+      list.replaceChildren();
+      if (!target) return;
+      const r = get();
+      const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      const hit = r.list.filter((x) => (!ownedOnly || x.missing === 0)
+        && words.every((w) => x.ids.some((id) => personaName(id).toLowerCase().includes(w))));
+      list.append(h('p', { class: 'hint' }, t('fu_count', { n: hit.length })));
+      hit.slice(0, limit).forEach((x) => list.append(h('div', { class: 'recipe' }, x.ids.map(ingredient),
+        h('small', { class: 'miss' + (x.missing ? '' : ' ok') }, x.missing ? t('fu_missing', { n: x.missing }) : t('fu_ready')))));
+      if (hit.length > limit) list.append(h('button', { class: 'btn', onclick: () => { limit += 50; paintList(); } }, t('show_more', { n: hit.length - limit })));
+      if (!hit.length) list.append(h('p', { class: 'empty' }, r.list.length ? t('fu_no_match') : t(mode === 'pairs' ? 'fu_none_pairs' : 'fu_none_triples')));
+    }
+    function paintHead() {
+      head.replaceChildren();
+      const choose = h('button', { class: 'select', type: 'button', onclick: async () => {
+        const id = await pick(t('fu_pick'), PK.targets().map((x) => ({ id: x, name: personaName(x), sub: label(x) })), target);
+        if (id !== undefined && id !== target) { back.length = 0; go(id); }
+      } }, h('span', { class: 'v' }, target ? personaName(target) : t('fu_pick')));
+      if (back.length) head.append(h('button', { class: 'btn small', style: 'margin-bottom:8px', onclick: () => go(back.pop()) }, '‹ ' + personaName(back[back.length - 1])));
+      head.append(choose);
+      if (!target) { head.append(h('p', { class: 'hint' }, t('fu_intro'))); return; }
+      const special = !!get().special;
+      head.append(h('p', { class: 'hint' }, label(target)));
+      if (PK.unlock(target)) head.append(h('p', { class: 'hint' }, t('fu_unlock', { c: PK.unlock(target) })));
+      if (PK.base(target).lvl > S.mcLevel) head.append(h('p', { class: 'hint warn' }, t('fu_level', { lv: S.mcLevel })));
+      if (special) head.append(h('p', { class: 'hint' }, t('fu_special')));
+      else head.append(h('div', { class: 'chips', style: 'margin-top:10px' }, [['pairs', 'fu_two'], ['triples', 'fu_three']].map(([m, k]) =>
+        h('button', { class: 'chip' + (mode === m ? ' on' : ''), onclick: () => { mode = m; limit = 50; paintHead(); paintList(); } }, t(k)))));
+      if (!special) {
+        const search = h('input', { type: 'text', class: 'search', placeholder: t('fu_search'), value: query, autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false' });
+        search.addEventListener('input', () => { query = search.value; limit = 50; paintList(); });
+        const box = h('input', { type: 'checkbox' });
+        box.checked = ownedOnly;
+        box.addEventListener('change', () => { ownedOnly = box.checked; limit = 50; paintList(); });
+        head.append(search, h('label', { class: 'check' }, box, t('fu_owned_only')));
+      }
+      head.append(h('p', { class: 'hint' }, t('fu_legend')));
+    }
+    paintHead(); paintList();
+    openSheet(t('fu_title'), h('div', null, head, list), { full: true });
   }
 
   /** Every place a Persona can be copied to: protagonist slots and party members. */
@@ -598,7 +734,7 @@
       let pe = S.compendium.find((c) => c.id === id);
       if (!pe) {
         if (id > P4G.COMPENDIUM_COUNT) { toast(t('comp_bad_id'), true); return; }
-        pe = P4G.newPersona(id); S.compendium.push(pe); S.compendium.sort((a, b) => a.id - b.id); markDirty();
+        pe = P4G.newPersona(id); PK.applyDefaults(pe, id); S.compendium.push(pe); S.compendium.sort((a, b) => a.id - b.id); markDirty();
       }
       renderList(); openEditor(pe);
     } }, t('add'));
@@ -608,7 +744,8 @@
       let n = 0;
       for (let id = 1; id <= P4G.COMPENDIUM_COUNT; id++) {
         if (!DB.personae[id] || DB.personae[id] === 'Blank' || S.compendium.some((c) => c.id === id)) continue;
-        const pe = P4G.newPersona(id); pe.level = lv; pe.totalxp = P4G.xpForLevel(lv);
+        const pe = P4G.newPersona(id);
+        if (!PK.applyDefaults(pe, id, lv)) { pe.level = lv; pe.totalxp = P4G.xpForLevel(lv); }
         S.compendium.push(pe); n++;
       }
       if (!n) { toast(t('comp_fill_none')); return; }
@@ -720,7 +857,7 @@
     navEl.replaceChildren();
     if (!S) {
       mainEl.append(h('div', { class: 'welcome' },
-        h('div', { class: 'logo' }, 'P4G'),
+        h('div', { class: 'logo', 'aria-hidden': 'true' }, h('span', null, 'P4G')),
         h('h1', null, t('welcome_title')),
         h('p', null, t('welcome_text')),
         hasFolderAccess() ? h('button', { class: 'btn accent', onclick: openSaveFolder }, t('open_folder')) : null,
@@ -976,7 +1113,7 @@
 
   function showSettings() {
     const choice = (label, key, def, opts) => {
-      const box = h('div', { class: 'chips', style: 'margin-bottom:0' });
+      const box = h('div', { class: 'chips wrap', style: 'margin-bottom:0' });
       const paint = () => [...box.children].forEach((c, i) => c.classList.toggle('on', opts[i][0] === pref(key, def)));
       opts.forEach(([val, name]) => box.append(h('button', { class: 'chip', onclick: () => { setPref(key, val); applyDisplay(); paint(); } }, name)));
       paint();
@@ -986,7 +1123,7 @@
     const paint = () => { xpBtn.textContent = autoXp() ? t('on') : t('off'); xpBtn.classList.toggle('on', autoXp()); };
     paint();
     openSheet(t('settings'), h('div', null,
-      choice(t('theme'), 'p4g-theme', 'dark', [['dark', t('theme_dark')], ['light', t('theme_light')], ['auto', t('theme_auto')]]),
+      choice(t('theme'), 'p4g-theme', 'tv', [['tv', t('theme_tv')], ['midnight', t('theme_midnight')], ['auto', t('theme_auto')], ['dark', t('theme_dark')], ['light', t('theme_light')]]),
       choice(t('font_size'), 'p4g-fs', 'normal', [['small', t('fs_small')], ['normal', t('fs_normal')], ['large', t('fs_large')]]),
       h('p', { class: 'hint' }, t('auto_xp')), h('div', { class: 'chips', style: 'margin-bottom:0' }, xpBtn), h('p', { class: 'hint' }, t('auto_xp_hint')),
       h('p', { class: 'hint' }, t('help_hint'))));
@@ -1001,6 +1138,8 @@
     let handle;
     const opt = (label, fn) => h('button', { class: 'opt', onclick: () => { handle.close(); fn(); } }, h('span', null, label));
     handle = openSheet(t('tools'), h('div', null,
+      opt(t('pl_title'), () => SCREENS.showPlanner()), opt(t('fu_title'), () => showFusion()),
+      opt(t('sh_title'), () => SCREENS.showShadows()), opt(t('el_team'), showTeam), opt(t('cd_title'), () => SCREENS.showCard()),
       opt(t('doctor'), showDoctor), opt(t('goals'), showGoals), opt(t('timeline'), showTimeline),
       opt(t('sandbox'), showSandbox), opt(t('transfer'), showTransfer), opt(t('hex'), showHex)));
   }
@@ -1442,6 +1581,12 @@
     return 'exit';
   };
   window.__p4g = { get state() { return S; }, loadBytes, currentBytes }; // debug / testing hook
+
+  const SCREENS = window.P4GScreens({
+    h, t, openSheet, pick, toast, DB, PK, AFF_LABEL, affCell, personaName, skillName, skillSummary, protagName, bridge,
+    ELEM_NAMES: P4GPersona.ELEMENTS.map((e) => SKILL_ELEMS[e]),
+    state: () => S, slot: () => slotIdx, team: teamOf,
+  });
 
   build();
 })();

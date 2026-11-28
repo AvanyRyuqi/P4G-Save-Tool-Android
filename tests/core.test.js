@@ -256,3 +256,262 @@ test('skill info covers every selectable skill and matches by id', () => {
   assert.deepStrictEqual([info[1].c, info[1].d, info[120].c], ['4 SP', '√40 pwr', '6% HP']);
   assert.ok(Object.values(info).every((v) => !/\$\d/.test(v.d || '')));
 });
+
+// ------------------------------------------------------------ Persona data, affinities, fusion
+function personaKit() {
+  const www = path.join(__dirname, '../app/src/main/assets/www/');
+  const win = {};
+  for (const f of ['db.js', 'persona-data.js']) new Function('window', fs.readFileSync(www + f, 'utf8'))(win);
+  const full = win.P4G_DB, data = win.P4G_PERSONA_DATA;
+  const PK = require(www + 'p4g-persona.js').create(data, full, P4G.xpForLevel);
+  const pid = (n) => { const i = full.personae.lastIndexOf(n); assert.ok(i > 0, 'Persona ' + n); return i; };
+  const sid = (n) => { const i = full.allSkills.indexOf(n); assert.ok(i > 0, 'skill ' + n); return i; };
+  return { PK, data, full, pid, sid };
+}
+
+test('Persona data covers the selectable Personas and uses known skill ids', () => {
+  const { data, full } = personaKit();
+  const noData = P4G.buildCatalog(db).personae.filter((x) => x.id !== 0 && !data.personas[x.id]).map((x) => x.name);
+  // placeholders and enemy-only entries the source does not describe
+  assert.deepStrictEqual(noData.filter((n) => !/^(Black Izanami|Okami)$/.test(n) && /^[A-Za-z]/.test(n)), []);
+  for (const d of Object.values(data.personas)) {
+    assert.match(d.x, /^[w\-Ssnrd]{8}$/);
+    if (d.k) { assert.strictEqual(d.s.length, 5); for (const [s] of d.k) assert.ok(full.allSkills[s], 'skill id ' + s); }
+  }
+});
+
+test('default level, stats and skills follow the requested level', () => {
+  const { PK, pid, sid } = personaKit();
+  const base = PK.defaults(pid('Izanagi'));
+  assert.deepStrictEqual([base.level, base.totalxp, base.st, base.ma, base.de, base.ag, base.lu], [1, 0, 3, 2, 2, 3, 2]);
+  assert.deepStrictEqual(base.skills, [sid('Zio'), sid('Cleave'), sid('Rakukaja'), 0, 0, 0, 0, 0]);
+  assert.deepStrictEqual(PK.defaults(pid('Izanagi'), 5).skills.slice(3, 6), [sid('Rakunda'), sid('Tarukaja'), 0]);
+  // never below the base level
+  assert.strictEqual(PK.defaults(pid('Magatsu-Izanagi'), 1).level, 77);
+  // only the latest eight skills fit
+  const late = PK.defaults(pid('Jiraiya'), 99);
+  assert.strictEqual(late.skills.length, 8); assert.ok(!late.skills.includes(sid('Garu'))); assert.strictEqual(late.skills[7], sid('Wind Amp'));
+  // evolved party Personas and unknown ids have no defaults and are left alone
+  const p = P4G.newPersona(pid('Susano-O'));
+  assert.strictEqual(PK.applyDefaults(p, p.id), false);
+  assert.deepStrictEqual(p, P4G.newPersona(pid('Susano-O')));
+});
+
+test('defaults survive a save round trip', () => {
+  const { PK, pid } = personaKit();
+  const orig = fakeSave(), s = P4G.parse(orig);
+  assert.ok(PK.applyDefaults(s.mcSlots[3], pid('Pixie')));
+  const again = P4G.parse(P4G.serialize(s, orig)).mcSlots[3];
+  assert.deepStrictEqual(again, s.mcSlots[3]);
+});
+
+test('affinities combine base data with passive skills', () => {
+  const { PK, pid, sid } = personaKit();
+  const codes = (c) => c.map((x) => x.code).join('');
+  assert.strictEqual(codes(PK.affinities(pid('Izanagi'), [])), '---swSn-');
+  assert.strictEqual(codes(PK.affinities(pid('Izanagi'), [sid('Null Wind'), sid('Resist Dark'), sid('Absorb Fire')])), '-d-snSn-');
+  assert.strictEqual(codes(PK.affinities(pid('Susano-O'), [])), '-s-wn---');
+  assert.strictEqual(PK.affinities(60000, []), null);
+  const sum = PK.teamSummary([PK.affinities(pid('Izanagi'), []), PK.affinities(pid('Jiraiya'), []), null]);
+  assert.deepStrictEqual(sum[4], { elem: 'win', weak: 1, guard: 1 });
+  assert.deepStrictEqual(sum[3], { elem: 'ele', weak: 1, guard: 1 });
+});
+
+test('fusion recipes: special, two and three Persona', () => {
+  const { PK, data, pid } = personaKit();
+  assert.deepStrictEqual(PK.recipes(pid('Alice'), { triple: true }), { special: [pid('Belial'), pid('Nebiros')], pairs: [], triples: [] });
+  assert.strictEqual(PK.recipes(pid('Jiraiya')), null);
+  assert.strictEqual(PK.recipes(206), null);
+  const races = data.chart.races, idx = (id) => races.indexOf(data.personas[id].r);
+  const specialPairs = new Set(Object.values(data.special).filter((v) => v.length === 2).map((v) => v.slice().sort().join()));
+  let total = 0;
+  for (const target of PK.targets()) {
+    const r = PK.recipes(target);
+    total += r.pairs.length;
+    for (const [a, b] of r.pairs) {
+      assert.ok(a && b && a !== b && a !== target && b !== target, 'ingredients of ' + target);
+      assert.ok(!specialPairs.has([a, b].sort().join()), 'special pair offered for ' + target);
+      assert.strictEqual(PK.fusePair(b, a), target);
+      // two different arcana must give the result's arcana in the chart (upper triangle)
+      const i = Math.min(idx(a), idx(b)), j = Math.max(idx(a), idx(b));
+      if (i !== j) assert.strictEqual(data.chart.table[i][j], data.personas[target].r);
+      else assert.strictEqual(data.personas[a].r, data.personas[target].r);
+    }
+  }
+  assert.ok(total > 19000, 'two-Persona recipes: ' + total);
+  // a result equal to an ingredient moves up to the next Persona of that arcana
+  assert.strictEqual(PK.fusePair(pid('Ares'), pid('Gurr')), pid('Triglav'));
+  assert.strictEqual(PK.fusePair(pid('Rangda'), pid('Barong')), pid('Shiva'));
+  const t = PK.recipes(pid('Pixie'), { triple: true });
+  assert.ok(t.triples.every((x) => new Set(x).size === 3 && !x.includes(pid('Pixie'))));
+  const ranked = PK.rank([[pid('Pixie'), pid('Izanagi')], [pid('Alice'), pid('Belial')]], new Set([pid('Alice'), pid('Belial')]));
+  assert.deepStrictEqual(ranked.map((x) => x.missing), [0, 2]);
+});
+
+// ---------------------------------------------------------------- planner and bestiary
+const P4GPlanner = require('../app/src/main/assets/www/p4g-planner.js');
+const P4GShadows = require('../app/src/main/assets/www/p4g-shadows.js');
+function shadowKit() {
+  const w = global.window || (global.window = {});
+  require('../app/src/main/assets/www/shadow-data.js');
+  return P4GShadows.create(w.P4G_SHADOW_DATA);
+}
+/** Replays a route step by step against the fusion and inheritance rules. */
+function checkRoute(kit, request, result) {
+  const { PK, PL, data } = kit;
+  const built = [];
+  result.steps.forEach((s, i) => {
+    let state;
+    if (s.type === 'get') {
+      if (s.src === 'new') {
+        assert.ok(request.allowNew && s.id !== request.target);
+        state = { id: s.id, level: PK.base(s.id).lvl, skills: PK.defaults(s.id).skills.filter(Boolean) };
+      } else {
+        assert.ok(request.owned.includes(s.own) && s.own.id === s.id);
+        state = { id: s.id, level: s.own.level, skills: s.own.skills.filter(Boolean) };
+      }
+      state.count = state.skills.length;
+    } else if (s.type === 'level') {
+      const from = built[s.from];
+      assert.ok(s.from < i && from.id === s.id && s.level > from.level && s.level <= 99);
+      const gained = data.personas[s.id].k.filter((k) => k[1] > from.level && k[1] <= s.level).map((k) => k[0]);
+      s.learn.forEach((x) => assert.ok(gained.includes(x), 'learned by that level'));
+      const skills = [...new Set(from.skills.concat(gained))];
+      while (skills.length > 8) skills.splice(Math.max(0, skills.findIndex((x) => !request.skills.includes(x))), 1);
+      state = { id: s.id, level: s.level, skills, count: Math.min(8, from.count + gained.length) };
+    } else {
+      const parts = s.from.map((f) => { assert.ok(f < i); return built[f]; });
+      const ids = parts.map((p) => p.id), key = ids.slice().sort((a, b) => a - b).join();
+      assert.strictEqual(new Set(ids).size, ids.length);
+      assert.ok(!ids.includes(s.id));
+      if (data.special[s.id]) assert.strictEqual(key, data.special[s.id].slice().sort((a, b) => a - b).join());
+      else if (ids.length === 2) assert.strictEqual(PK.fusePair(ids[0], ids[1]), s.id);
+      else {
+        assert.strictEqual(s.id, request.target, 'three-Persona fusion only as the last step');
+        assert.ok(PK.recipes(s.id, { triple: true }).triples.some((t) => t.slice().sort((a, b) => a - b).join() === key));
+      }
+      if (request.maxLevel) assert.ok(PK.base(s.id).lvl <= request.maxLevel);
+      const pool = [...new Set(parts.flatMap((p) => p.skills))];
+      assert.strictEqual(s.distinct, Math.max(pool.length, ...parts.map((p) => p.count)));
+      assert.strictEqual(s.slots, P4GPlanner.slotsFor(s.distinct));
+      assert.ok(s.inherit.length <= s.slots);
+      s.inherit.forEach((x) => assert.ok(pool.includes(x) && PL.canInherit(s.id, x), 'inheritable and carried'));
+      const d = data.personas[s.id];
+      const innate = d.k.filter((k) => k[1] <= d.l).map((k) => k[0]);
+      const eligible = pool.filter((x) => !innate.includes(x) && PL.canInherit(s.id, x)).length;
+      state = { id: s.id, level: d.l, skills: [...new Set(innate.concat(s.inherit))], count: Math.min(8, innate.length + Math.min(s.slots, eligible)) };
+    }
+    built.push(state);
+  });
+  const end = built[built.length - 1];
+  assert.strictEqual(end.id, request.target);
+  request.skills.forEach((x) => assert.ok(end.skills.includes(x), 'final Persona holds ' + x));
+}
+function plannerKit() {
+  const kit = personaKit();
+  const PL = P4GPlanner.create(kit.data, kit.PK);
+  const own = (name, level) => { const id = kit.pid(name), d = kit.PK.defaults(id, level); return { id, level: d.level, skills: d.skills, src: 'slot' }; };
+  const owned = ['Izanagi', 'Pixie', 'Apsaras', 'Forneus', 'Angel', 'Slime', 'Orobas', 'Senri', 'Eligor'].map((n) => own(n));
+  return Object.assign(kit, { PL, own, owned });
+}
+
+test('inherit slots follow the thresholds', () => {
+  assert.deepStrictEqual([0, 1, 5, 6, 8, 9, 11, 12, 23, 24, 40].map(P4GPlanner.slotsFor), [0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+});
+
+test('planner refuses skills the target can never hold', () => {
+  const { PL, pid, sid, owned } = plannerKit();
+  const r = PL.plan({ target: pid('Jack Frost'), skills: [sid('Agi'), sid('Debilitate'), sid('Bufu')], owned, allowNew: true });
+  assert.strictEqual(r.status, 'blocked');
+  assert.deepStrictEqual(r.blocked, [{ skill: sid('Agi'), why: 'element' }, { skill: sid('Debilitate'), why: 'exclusive' }]);
+});
+
+test('planner reports an owned match and a level limit', () => {
+  const { PL, pid, sid, owned } = plannerKit();
+  assert.strictEqual(PL.plan({ target: pid('Pixie'), skills: [sid('Dia')], owned }).status, 'owned');
+  const r = PL.plan({ target: pid('Yoshitsune'), skills: [sid('Apt Pupil')], owned, allowNew: true, maxLevel: 20 });
+  assert.deepStrictEqual([r.status, r.level], ['none', 75]);
+});
+
+test('planner routes obey the fusion and inheritance rules', () => {
+  const kit = plannerKit();
+  const { PL, pid, sid, owned } = kit;
+  const requests = [
+    { target: pid('Pixie'), skills: [sid('Absorb Physical'), sid('Mind Charge')], allowNew: true, maxLevel: 0 },
+    { target: pid('Yoshitsune'), skills: ['Brave Blade', 'Power Charge', 'Apt Pupil', 'Null Wind'].map(sid), allowNew: true, maxLevel: 99 },
+    { target: pid('Lucifer'), skills: ['Megidolaon', 'Mediarahan', 'Victory Cry', 'Mind Charge', 'Salvation', 'Spell Master'].map(sid), allowNew: true, maxLevel: 99 },
+  ];
+  for (const q of requests) {
+    q.owned = owned;
+    const r = PL.plan(q);
+    assert.strictEqual(r.status, 'ok', JSON.stringify(q.skills));
+    checkRoute(kit, q, r);
+  }
+});
+
+test('planner can work from owned Personas only', () => {
+  const kit = plannerKit();
+  const { PL, PK, pid, own } = kit;
+  const owned = [own('Izanagi'), own('Pixie'), own('Apsaras'), own('Forneus'), own('Angel'), own('Slime')];
+  let checked = 0;
+  for (const target of PK.targets()) {
+    // every skill the first two owned Personas start with, one at a time
+    for (const skill of owned[0].skills.concat(owned[1].skills).filter(Boolean)) {
+      if (PL.blocker(target, skill, owned) || PL.learnLevel(target, skill) != null || PK.base(target).lvl > 15) continue;
+      const q = { target, skills: [skill], owned, allowNew: false, maxLevel: 0 };
+      const r = PL.plan(q);
+      if (r.status !== 'ok') continue;
+      assert.ok(r.steps.every((s) => s.src !== 'new'));
+      checkRoute(kit, q, r); checked++;
+    }
+  }
+  assert.ok(checked > 20, 'routes checked: ' + checked);
+});
+
+test('bestiary data and filters', () => {
+  const SH = shadowKit();
+  assert.strictEqual(SH.all.length, 266);
+  assert.strictEqual(SH.dungeons.length, 10);
+  assert.ok(SH.all.every((e) => /^[w\-snrd]{8}$/.test(e.x) && e.g.length && Array.isArray(e.k)));
+  SH.dungeons.forEach((d, i) => assert.ok(SH.find({ dungeon: i }).length > 0, d));
+  const castle = SH.find({ dungeon: 0, weakTo: 1 });
+  assert.ok(castle.length && castle.every((e) => e.x[1] === 'w' && e.w.includes("Yukiko's Castle")));
+  assert.deepStrictEqual(SH.find({ query: 'hablerie lying' }).map((e) => e.n), ['Lying Hablerie', 'Lying Hablerie A']);
+  const found = SH.drops('iolite');
+  assert.ok(found.length === 1 && found[0].sources.every((s, i, a) => !i || a[i - 1].odds >= s.odds));
+});
+
+test('bestiary summary, advice and team threats', () => {
+  const SH = shadowKit();
+  const mk = (x, t) => ({ x, t });
+  const list = [mk('-w--r---', [1, 3]), mk('-w--n---', [1]), mk('--w-d---', [])];
+  const sum = SH.summary(list);
+  assert.deepStrictEqual([sum[1].weak, sum[1].attackers, sum[4].block, sum[4].back], [2, 2, 3, 2]);
+  const adv = SH.advice(list);
+  assert.deepStrictEqual([adv.best.map((r) => r.i), adv.risky.map((r) => r.i)], [[1, 2], [4]]);
+  const team = [{ who: 'A', codes: '-w------'.split('') }, { who: 'B', codes: '---w----'.split('') }, { who: 'C', codes: null }];
+  assert.deepStrictEqual(SH.threats(list, team), [{ i: 1, attackers: 2, weak: ['A'] }, { i: 3, attackers: 1, weak: ['B'] }]);
+});
+
+test('planner ignores unknown and duplicated skills of an edited save', () => {
+  const kit = plannerKit();
+  const { PL, pid, sid } = kit;
+  const bare = (name, level, skills) => ({ id: pid(name), level, skills, src: 'slot' });
+  const junk = [60000, 61000, 62000, 63000, 64000, 65535];
+  const owned = [bare('Jack Frost', 255, [sid('Dia'), sid('Dia')].concat(junk)), bare('Orobas', 0, junk.concat(sid('Dia')))];
+  const r = PL.plan({ target: pid('Pixie'), skills: [sid('Dia')], owned, allowNew: false });
+  assert.strictEqual(r.status, 'ok');
+  const fusion = r.steps[r.steps.length - 1];
+  assert.deepStrictEqual([fusion.distinct, fusion.slots], [1, 1]);
+  r.steps.filter((s) => s.type === 'get').forEach((s) => assert.ok(s.level >= 1 && s.level <= 99));
+});
+
+test('planner never lists a special-fusion Persona as something to go and find', () => {
+  const kit = plannerKit();
+  const { PL, data, pid, sid, owned } = kit;
+  const q = { target: pid('Lucifer'), skills: ['Megidolaon', 'Mind Charge'].map(sid), owned, allowNew: true, maxLevel: 0 };
+  const r = PL.plan(q);
+  assert.strictEqual(r.status, 'ok');
+  assert.ok(r.steps.every((s) => s.src !== 'new' || !data.special[s.id]));
+  checkRoute(kit, q, r);
+});

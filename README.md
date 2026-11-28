@@ -24,6 +24,53 @@ Data tersimpan offline di `skill-info.js`, dibuat dari [aqiu384/megaten-fusion-t
 (Unlicense) dengan `python tools/gen_skill_info.py <folder-clone>`. Teks efek berbahasa Inggris seperti data game lainnya.
 "Syarat khusus (kode)" adalah kode asli dari sumber untuk skill anggota party yang tidak didapat lewat level biasa.
 
+## Tema
+
+Tampilan bawaan **TV Kuning**: desain sendiri bergaya siaran TV tengah malam, tanpa aset dari game. Pilihan lain di
+**⋮ ▸ Tampilan & pengaturan**: Tengah Malam, Klasik gelap, Klasik terang, atau ikuti sistem. Gaya tema ada di
+`assets/www/theme.css`.
+
+## Data Persona, elemen, dan fusion
+
+* **Persona baru langsung lengkap**: memilih Persona di slot kosong mengisi level dasar, XP, stat, dan skill bawaan.
+  Di slot yang sudah terisi, aplikasi bertanya dulu. Tombol **Isi bawaan** mengisi ulang pada level pilihanmu
+  (skill = yang dipelajari sampai level itu, 8 terakhir; stat tetap stat dasar). Compendium **+ Tambah** dan **Isi semua**
+  memakai data yang sama. Persona party tahap 2 dan 3 tidak punya data bawaan di sumber, jadi nilainya tidak diubah.
+* **Elemen**: editor Persona menampilkan lemah/tahan 8 elemen, termasuk efek skill Resist/Null/Repel/Absorb.
+  **⋮ ▸ Alat lanjutan ▸ Tim & elemen** membandingkan protagonist dan 3 anggota party aktif. Accessory tidak dihitung.
+* **Kalkulator fusion** (**⋮ ▸ Alat lanjutan**, atau tombol **Resep fusion** di editor): resep 2 Persona, 3 Persona, dan
+  resep khusus untuk Persona target, diurutkan dari bahan yang paling banyak sudah kamu miliki (slot atau Compendium).
+  Hanya membaca save. Aplikasi tidak memeriksa syarat buka (Social Link dll.), hanya menampilkannya.
+
+Data tersimpan offline di `persona-data.js`, dibuat dari [aqiu384/megaten-fusion-tool](https://github.com/aqiu384/megaten-fusion-tool)
+(Unlicense) dengan `python tools/gen_persona_data.py <folder-clone>`. Aturan fusion diport ke `p4g-persona.js` dari alat yang
+sama, dengan dua koreksi: hasil fusion tidak pernah sama dengan salah satu bahannya, dan pasangan resep khusus hanya
+menghasilkan Persona khusus itu. Satu salah ketik di tabel arcana sumber (Empress × Lovers) juga dibetulkan.
+Hasil belum dicocokkan satu per satu dengan game aslinya.
+
+## Buku Bayangan, perakit Persona, dan Kartu Siaran
+
+Semuanya ada di **⋮ ▸ Alat lanjutan** dan hanya membaca save.
+
+* **Rakit Persona impian** (juga tombol **Rakit skill** di editor): pilih Persona dan sampai 6 skill. Aplikasi mencari
+  urutan fusion dan naik level dari Persona di slot dan Compendium, boleh ditambah Persona yang belum dimiliki.
+  Batas level protagonis bisa dimatikan. Pencarian bisa dibatalkan; kalau batas pencarian habis, aplikasi bilang belum
+  ketemu (bukan berarti mustahil). Rute tidak dijamin terpendek.
+* **Buku Bayangan**: 266 jenis Shadow (elemen, skill, lokasi, jatuhan), perbandingan tim dengan satu dungeon, dan cari
+  barang jatuhan. Boss cerita tidak ada di data. Serangan biasa tidak dihitung.
+* **Kartu Siaran**: gambar PNG berisi tim atau satu Persona (level, stat, skill, elemen) untuk dibagikan.
+
+Aturan yang dipakai perakit, dan seberapa yakin:
+
+* Elemen yang boleh diwariskan dan skill eksklusif mengikuti data megaten-fusion-tool.
+  [Wiki Megaten](https://megatenwiki.com/wiki/Skill_Inheritance) mencatat larangan yang sedikit lebih longgar untuk
+  beberapa tipe (misalnya Light dan Dark terhadap skill Phys); aplikasi mengikuti data, yang lebih ketat.
+* Jumlah slot warisan (skill berbeda pada bahan: 1–5 → 1, 6–8 → 2, 9–11 → 3, 12–23 → 4, 24+ → 5) berasal dari
+  [catatan permainan Persona 4 versi awal](https://lparchive.org/Persona-4/Lesson2/). **Belum diperiksa di Golden.**
+* Rute dianggap mengisi semua slot warisan di setiap fusion.
+
+Data Shadow ada di `shadow-data.js`, dibuat dengan `python tools/gen_shadow_data.py <folder-clone>`.
+
 ## Baca folder save langsung
 
 Di layar awal tekan **Buka folder save**. Aplikasi mencari `data*.bin` (beserta `.binslot`) di folder
@@ -68,6 +115,7 @@ app/src/main/
   assets/www/
     p4g-core.js   <- port logika baca/tulis save (offset persis dari MainWindow.xaml.cs)
     db.js         <- database nama item/skill/persona (diekstrak dari Database di C#)
+    p4g-persona.js, persona-data.js <- data bawaan Persona, elemen, resep fusion
     app.js, style.css, index.html  <- UI mobile
     i18n.js       <- teks UI Indonesia & English (tambah bahasa baru di sini)
   java/app/p4gsavetool/MainActivity.kt  <- WebView + file picker (SAF) + backup
@@ -130,7 +178,7 @@ Level (protagonist and every Persona) and ST/MA/DE/AG/LU now have a numeric box 
 - **Quick presets** – max Yen, protagonist Lv 99, max social stats, all social links Lv 10, all owned items ×99, add a whole item section ×99.
 - **Backups** (⋮ menu) – browse the automatic backups of the open save and load one back into the editor.
 - **Persona tools** – copy a Persona to another slot/party member, clear skills, text export/import of a build.
-- **Compendium → Fill all** at a chosen level (new entries have empty skills/minimal stats).
+- **Compendium → Fill all** at a chosen level (new entries get the skills for that level and their base stats).
 - **Auto XP sync** (optional), **light/dark/system theme** and **text size** under ⋮ → Display & settings.
 - The top bar shows whether a Switch `.binslot` is paired.
 
@@ -143,7 +191,7 @@ Not included: Steam/PC save support (format not verified).
 - **Search save** (⋮) – items, Personas, skills held by Personas, social links; tap a result to jump to it.
 - **Compare with another save**, **Save summary**, **Share** (.bin/.binslot/Persona text) and **saved Persona builds**.
 
-Not included (needs data/samples I do not have): default skills per Persona, fusion helper, story-flag editor, Steam/PC saves.
+Not included (needs data/samples I do not have): story-flag editor, Steam/PC saves. Default skills per Persona and the fusion calculator were added later (see **Data Persona, elemen, dan fusion**).
 
 ### Update: advanced tools (⋮ → Advanced tools)
 - **Save doctor** – scans for corrupt/inconsistent data (bad Persona flags, unknown IDs, duplicate links/party, unfit equipment…) with one-tap fixes.

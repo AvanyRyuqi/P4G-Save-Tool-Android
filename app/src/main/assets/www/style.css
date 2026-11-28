@@ -189,4 +189,31 @@ table.team { width: 100%; table-layout: fixed; border-collapse: separate; border
 .miss { flex-basis: 100%; color: var(--muted); font-size: calc(11px * var(--fz, 1)); }
 .miss.ok { color: var(--ok); }
 .check { display: flex; align-items: center; gap: 8px; min-height: 40px; margin-top: 6px; }
-.check input { width: 20px; height: 20px; accent-color: var(--accent); }
+.check input { width: 20px; height: 20px; flex: none; accent-color: var(--accent); }
+
+/* bestiary, planner, card */
+.sub { margin: 16px 0 6px; font-size: calc(15px * var(--fz, 1)); }
+.hint.warn, small.warn { color: var(--danger); }
+small.ok { color: var(--ok); }
+.btn.wide { width: 100%; margin: 8px 0; }
+.item.col, .item.step, .item.danger, .route li { flex-direction: column; align-items: stretch; gap: 3px; }
+.item.shadow { display: block; width: 100%; text-align: left; cursor: pointer; color: var(--text); }
+.shadow .line { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; margin-bottom: 6px; }
+.shadow .line small { color: var(--muted); }
+.aff .cell { display: block; min-width: 0; }
+.aff .cell .ac { display: block; }
+.item.danger b, .item.step b, .route b { display: block; overflow-wrap: anywhere; }
+.item small { display: block; }
+.drop button.learn { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); color: var(--text); text-align: left; min-height: 44px; cursor: pointer; font: inherit; }
+.drop .learn small { text-align: right; max-width: 55%; }
+table.sum { width: 100%; border-collapse: collapse; font-size: calc(12px * var(--fz, 1)); }
+.sum th, .sum td { padding: 5px 2px; text-align: center; border-bottom: 1px solid var(--line); }
+.sum tr > th:first-child { text-align: left; }
+.wanted { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.wanted span { flex: 1; min-width: 0; font-weight: 700; }
+.wanted small { display: block; font-weight: 400; color: var(--muted); font-size: calc(12px * var(--fz, 1)); }
+.route { list-style: none; counter-reset: step; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.route li { counter-increment: step; position: relative; padding-left: 42px; }
+.route li::before { content: counter(step); position: absolute; left: 8px; top: 8px; width: 24px; height: 24px; display: grid; place-items: center;
+  background: var(--accent); color: var(--accent-ink); font-weight: 900; border-radius: 3px; }
+.cardpreview { display: block; width: 100%; height: auto; margin-top: 4px; }

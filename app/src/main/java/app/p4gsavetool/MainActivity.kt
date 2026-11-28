@@ -2,6 +2,7 @@ package app.p4gsavetool
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -399,8 +400,11 @@ class MainActivity : AppCompatActivity() {
                 val uri = androidx.core.content.FileProvider.getUriForFile(this@MainActivity, "$packageName.fileprovider", f)
                 runOnUiThread {
                     val send = Intent(Intent.ACTION_SEND).apply {
-                        type = "application/octet-stream"
+                        // pictures go out as pictures so chat apps show them inline; saves stay raw files
+                        type = if (f.name.endsWith(".png", ignoreCase = true)) "image/png" else "application/octet-stream"
                         putExtra(Intent.EXTRA_STREAM, uri)
+                        // lets the share sheet read the file for its preview
+                        clipData = ClipData.newRawUri(f.name, uri)
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     startActivity(Intent.createChooser(send, null))

@@ -373,6 +373,7 @@
       el.append(h('div', { class: 'toolbar', style: 'margin-top:10px;flex-wrap:wrap' },
         PK.defaults(p.id) ? h('button', { class: 'btn small', onclick: () => refillDefaults(p, refresh) }, t('pd_refill')) : null,
         PK.canFuse(p.id) ? h('button', { class: 'btn small', onclick: () => showFusion(p.id) }, t('fu_for_this')) : null,
+        PK.canFuse(p.id) ? h('button', { class: 'btn small', onclick: () => SCREENS.showPlanner(p.id) }, t('pl_for_this')) : null,
         h('button', { class: 'btn small', onclick: () => copyPersona(p) }, t('copy_to')),
         h('button', { class: 'btn small', onclick: () => { p.skills = [0, 0, 0, 0, 0, 0, 0, 0]; markDirty(); refresh(); } }, t('clear_skills')),
         h('button', { class: 'btn small', onclick: () => personaExchange(p, opts, refresh) }, t('export_import'))));
@@ -416,6 +417,14 @@
     return { el, paint };
   }
 
+  /** The protagonist with the Persona in slot `lead`, followed by the active party members. */
+  function teamOf(lead) {
+    const team = [{ who: protagName(), p: S.mcSlots[lead] }];
+    // party byte: 2 = Yosuke ... 8 = Teddie, one more than the member index in the file
+    S.party.forEach((v) => { const i = v - 1; if (i >= 1 && i < S.memberPersona.length) team.push({ who: DB.party[i], p: S.memberPersona[i] }); });
+    return team;
+  }
+
   /** Affinity table for the protagonist's chosen Persona and the three active party members. */
   function showTeam() {
     if (!S) return;
@@ -423,9 +432,7 @@
     let lead = filled.some((x) => x.i === slotIdx) ? slotIdx : (filled.length ? filled[0].i : 0);
     const body = h('div');
     const paint = () => {
-      const team = [{ who: protagName(), p: S.mcSlots[lead] }];
-      // party byte: 2 = Yosuke ... 8 = Teddie, one more than the member index in the file
-      S.party.forEach((v) => { const i = v - 1; if (i >= 1 && i < S.memberPersona.length) team.push({ who: DB.party[i], p: S.memberPersona[i] }); });
+      const team = teamOf(lead);
       team.forEach((m) => { m.cells = m.p && m.p.id ? PK.affinities(m.p.id, m.p.skills) : null; });
       const sum = PK.teamSummary(team.map((m) => m.cells));
       body.replaceChildren(h('p', { class: 'hint', style: 'margin-top:0' }, t('el_team_hint')));
@@ -1131,7 +1138,8 @@
     let handle;
     const opt = (label, fn) => h('button', { class: 'opt', onclick: () => { handle.close(); fn(); } }, h('span', null, label));
     handle = openSheet(t('tools'), h('div', null,
-      opt(t('fu_title'), () => showFusion()), opt(t('el_team'), showTeam),
+      opt(t('pl_title'), () => SCREENS.showPlanner()), opt(t('fu_title'), () => showFusion()),
+      opt(t('sh_title'), () => SCREENS.showShadows()), opt(t('el_team'), showTeam), opt(t('cd_title'), () => SCREENS.showCard()),
       opt(t('doctor'), showDoctor), opt(t('goals'), showGoals), opt(t('timeline'), showTimeline),
       opt(t('sandbox'), showSandbox), opt(t('transfer'), showTransfer), opt(t('hex'), showHex)));
   }
@@ -1573,6 +1581,12 @@
     return 'exit';
   };
   window.__p4g = { get state() { return S; }, loadBytes, currentBytes }; // debug / testing hook
+
+  const SCREENS = window.P4GScreens({
+    h, t, openSheet, pick, toast, DB, PK, AFF_LABEL, affCell, personaName, skillName, skillSummary, protagName, bridge,
+    ELEM_NAMES: P4GPersona.ELEMENTS.map((e) => SKILL_ELEMS[e]),
+    state: () => S, slot: () => slotIdx, team: teamOf,
+  });
 
   build();
 })();

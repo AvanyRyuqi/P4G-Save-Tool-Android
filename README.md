@@ -48,6 +48,29 @@ sama, dengan dua koreksi: hasil fusion tidak pernah sama dengan salah satu bahan
 menghasilkan Persona khusus itu. Satu salah ketik di tabel arcana sumber (Empress × Lovers) juga dibetulkan.
 Hasil belum dicocokkan satu per satu dengan game aslinya.
 
+## Buku Bayangan, perakit Persona, dan Kartu Siaran
+
+Semuanya ada di **⋮ ▸ Alat lanjutan** dan hanya membaca save.
+
+* **Rakit Persona impian** (juga tombol **Rakit skill** di editor): pilih Persona dan sampai 6 skill. Aplikasi mencari
+  urutan fusion dan naik level dari Persona di slot dan Compendium, boleh ditambah Persona yang belum dimiliki.
+  Batas level protagonis bisa dimatikan. Pencarian bisa dibatalkan; kalau batas pencarian habis, aplikasi bilang belum
+  ketemu (bukan berarti mustahil). Rute tidak dijamin terpendek.
+* **Buku Bayangan**: 266 jenis Shadow (elemen, skill, lokasi, jatuhan), perbandingan tim dengan satu dungeon, dan cari
+  barang jatuhan. Boss cerita tidak ada di data. Serangan biasa tidak dihitung.
+* **Kartu Siaran**: gambar PNG berisi tim atau satu Persona (level, stat, skill, elemen) untuk dibagikan.
+
+Aturan yang dipakai perakit, dan seberapa yakin:
+
+* Elemen yang boleh diwariskan dan skill eksklusif mengikuti data megaten-fusion-tool.
+  [Wiki Megaten](https://megatenwiki.com/wiki/Skill_Inheritance) mencatat larangan yang sedikit lebih longgar untuk
+  beberapa tipe (misalnya Light dan Dark terhadap skill Phys); aplikasi mengikuti data, yang lebih ketat.
+* Jumlah slot warisan (skill berbeda pada bahan: 1–5 → 1, 6–8 → 2, 9–11 → 3, 12–23 → 4, 24+ → 5) berasal dari
+  [catatan permainan Persona 4 versi awal](https://lparchive.org/Persona-4/Lesson2/). **Belum diperiksa di Golden.**
+* Rute dianggap mengisi semua slot warisan di setiap fusion.
+
+Data Shadow ada di `shadow-data.js`, dibuat dengan `python tools/gen_shadow_data.py <folder-clone>`.
+
 ## Baca folder save langsung
 
 Di layar awal tekan **Buka folder save**. Aplikasi mencari `data*.bin` (beserta `.binslot`) di folder
